@@ -1,10 +1,12 @@
 import flet as ft
 import time
-import requests
-import csv
-import io
 import threading
 from datetime import datetime
+
+# Imporing these later to avoid startup crashes if they are missing
+# import requests 
+# import csv
+# import io
 
 # --- Core Logic (Pure Python version) ---
 
@@ -13,6 +15,10 @@ CAM_MULT = 1.1
 
 def fetch_nifty500_symbols():
     try:
+        import requests
+        import csv
+        import io
+        
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
@@ -53,12 +59,18 @@ def fetch_nifty500_symbols():
                     yahoo_symbols.append(s + ".NS")
                     
         return list(set(yahoo_symbols))
+    except ImportError as ie:
+        print(f"Import Error: {ie}")
+        raise ie # Propagate to show in UI
     except Exception as e:
         print(f"Error fetching symbols: {e}")
         return []
 
 def get_yahoo_data_pure(ticker):
     try:
+        import requests
+        from datetime import datetime
+        
         # Range 2y to ensure we get enough monthly data
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1mo&range=2y"
         headers = {
