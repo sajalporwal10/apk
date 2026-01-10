@@ -1,32 +1,33 @@
 import flet as ft
 import time
+import json
+import csv
+import io
 import threading
 from datetime import datetime
+import urllib.request
+import urllib.error
 
-# Imporing these later to avoid startup crashes if they are missing
-# import requests 
-# import csv
-# import io
-
-# --- Core Logic (Pure Python version) ---
+# --- Core Logic (Pure Python Standard Library) ---
 
 NIFTY500_CSV_URL = "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv"
 CAM_MULT = 1.1
 
+def fetch_url(url):
+    """Helper to fetch URL using standard library urllib"""
+    req = urllib.request.Request(
+        url, 
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    )
+    with urllib.request.urlopen(req, timeout=10) as response:
+        return response.read().decode('utf-8')
+
 def fetch_nifty500_symbols():
     try:
-        import requests
-        import csv
-        import io
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-        }
-        r = requests.get(NIFTY500_CSV_URL, headers=headers, timeout=30)
-        r.raise_for_status()
+        csv_text = fetch_url(NIFTY500_CSV_URL)
         
         # Parse CSV using standard library
-        f = io.StringIO(r.text)
+        f = io.StringIO(csv_text)
         reader = csv.DictReader(f)
         
         # Normalize column names to find the symbol column
@@ -59,26 +60,17 @@ def fetch_nifty500_symbols():
                     yahoo_symbols.append(s + ".NS")
                     
         return list(set(yahoo_symbols))
-    except ImportError as ie:
-        print(f"Import Error: {ie}")
-        raise ie # Propagate to show in UI
     except Exception as e:
         print(f"Error fetching symbols: {e}")
-        return []
+        # Return fallback list if fetch fails so app is usable
+        return ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS"]
 
 def get_yahoo_data_pure(ticker):
     try:
-        import requests
-        from datetime import datetime
-        
         # Range 2y to ensure we get enough monthly data
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1mo&range=2y"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-        }
-        resp = requests.get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
+        json_text = fetch_url(url)
+        data = json.loads(json_text)
         
         result = data.get("chart", {}).get("result", [])
         if not result: return None
