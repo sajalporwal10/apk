@@ -3,6 +3,8 @@ import time
 import requests
 import csv
 import io
+import threading
+from datetime import datetime
 
 # --- Core Logic (Pure Python version) ---
 
@@ -34,9 +36,6 @@ def fetch_nifty500_symbols():
             
         yahoo_symbols = []
         for row in reader:
-            # reader keys might match original fieldnames (with spaces?)
-            # DictReader uses the keys from fieldnames (which we haven't stripped in the reader obj, only in our list)
-            # So let's find the specific key in row that matches our sym_col name
             val = row.get(sym_col)
             if not val:
                  # Try finding key with whitespace
@@ -112,9 +111,6 @@ def process_ticker(ticker):
     now_ts = datetime.utcnow()
     
     # Logic: Find the last COMPLETED month.
-    # A candle is "current month" if cand.year == now.year and cand.month == now.month
-    # We want the latest candle that is NOT current month.
-    
     previous_month_candle = None
     
     # Iterate backwards
@@ -138,8 +134,7 @@ def process_ticker(ticker):
     if s3 == 0: return None
     pct_range = ((r3 - s3) / s3 * 100.0)
     
-    # Current Close (from the VERY LATEST candle, even if partial month)
-    # Using the last candle in the list for 'Close' price reference
+    # Current Close (using last candle available)
     last_close = float(candles[-1]["close"])
     
     return {
@@ -153,28 +148,98 @@ def process_ticker(ticker):
 # --- UI Application ---
 
 def main(page: ft.Page):
+    # Theme Setup
     page.title = "Nifty 500 Screener"
     page.theme_mode = ft.ThemeMode.LIGHT
-    page.padding = 20
+    page.theme = ft.Theme(
+        color_scheme_seed=ft.colors.INDIGO,
+        visual_density=ft.VisualDensity.COMFORTABLE,
+        use_material3=True
+    )
+    page.bgcolor = ft.colors.GREY_100
+    page.padding = 0  
+    page.window_width = 400
+    page.window_height = 800
 
     # -- State --
     stocks_data = []
-    
-    # Load saved comments from local storage
-    # Structure: {"TICKER": "Comment string", ...}
     saved_comments = page.client_storage.get("user_comments") or {}
 
     # -- Controls --
-    results_list = ft.ListView(expand=True, spacing=10)
-    status_text = ft.Text("Ready to scan.")
-    progress_bar = ft.ProgressBar(visible=False)
     
+    # Custom Card for Stock
+    def create_stock_card(stock):
+        has_comment = stock["ticker"] in saved_comments and saved_comments[stock["ticker"]]
+        
+        range_val = stock['pct_range']
+        range_color = ft.colors.GREEN_700 if range_val < 3 else ft.colors.ORANGE_700
+        
+        return ft.Card(
+            elevation=2,
+            surface_tint_color=ft.colors.SURFACE_TINT,
+            margin=ft.margin.symmetric(vertical=6, horizontal=12),
+            content=ft.Container(
+                padding=12,
+                content=ft.Column([
+                    ft.Row([
+                        ft.Column([
+                            ft.Text(stock['ticker'], size=16, weight=ft.FontWeight.BOLD, color=ft.colors.ON_SURFACE),
+                            ft.Text(f"Close: {stock['close']}", size=12, color=ft.colors.GREY_700),
+                        ]),
+                        ft.Container(expand=True),
+                        ft.IconButton(
+                            icon=ft.icons.NOTES if has_comment else ft.icons.ADD_COMMENT_OUTLINED,
+                            icon_color=ft.colors.PRIMARY if has_comment else ft.colors.GREY_400,
+                            tooltip="Add Note",
+                            on_click=lambda e: open_comment_dialog(stock)
+                        )
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    
+                    ft.Container(height=8),
+                    
+                    ft.Row([
+                        ft.Container(
+                            content=ft.Column([
+                                ft.Text("Range", size=10, color=ft.colors.GREY_600),
+                                ft.Text(f"{range_val}%", size=14, weight="bold", color=range_color)
+                            ]),
+                            bgcolor=ft.colors.with_opacity(0.1, range_color),
+                            padding=8,
+                            border_radius=8,
+                            expand=1
+                        ),
+                        ft.Container(width=8),
+                        ft.Container(
+                            content=ft.Column([
+                                ft.Text("R3 / S3", size=10, color=ft.colors.GREY_600),
+                                ft.Text(f"{stock['r3']} / {stock['s3']}", size=14, weight="bold")
+                            ]),
+                            bgcolor=ft.colors.GREY_200,
+                            padding=8,
+                            border_radius=8,
+                            expand=2
+                        )
+                    ])
+                ])
+            )
+        )
+
+    results_list = ft.ListView(expand=True, padding=ft.padding.only(bottom=80))
+
+    def show_snack(message, is_error=False):
+        page.snack_bar = ft.SnackBar(
+            content=ft.Text(message, color=ft.colors.WHITE),
+            bgcolor=ft.colors.RED_700 if is_error else ft.colors.GREY_900
+        )
+        page.snack_bar.open = True
+        page.update()
+
     def save_comment(ticker, comment):
         saved_comments[ticker] = comment
         page.client_storage.set("user_comments", saved_comments)
         page.update()
-        # Refresh list to show updated icon/status if needed
         render_list()
+        show_snack(f"Note saved for {ticker}")
 
     def open_comment_dialog(stock):
         ticker = stock["ticker"]
@@ -185,34 +250,36 @@ def main(page: ft.Page):
             multiline=True, 
             min_lines=3, 
             max_lines=5,
-            label="Your Analysis / Comment"
+            label="Analysis Notes",
+            border_radius=10,
+            filled=True
         )
         
         def close_dlg(e):
-            dialog.open = False
+            page.dialog.open = False
             page.update()
 
         def save_dlg(e):
             save_comment(ticker, comment_field.value)
-            dialog.open = False
+            page.dialog.open = False
             page.update()
             
         dialog = ft.AlertDialog(
-            title=ft.Text(f"Notes for {ticker}"),
-            content=status_text, # Placeholder, replacing with content below
+            title=ft.Text(f"{ticker}"),
+            content=ft.Column([
+                ft.ListTile(
+                    leading=ft.Icon(ft.icons.ANALYTICS),
+                    title=ft.Text("Price Levels"),
+                    subtitle=ft.Text(f"R3: {stock['r3']} | S3: {stock['s3']}")
+                ),
+                comment_field
+            ], tight=True, width=300),
             actions=[
                 ft.TextButton("Cancel", on_click=close_dlg),
-                ft.TextButton("Save", on_click=save_dlg),
+                ft.ElevatedButton("Save", on_click=save_dlg),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        # Fix content assignment
-        dialog.content = ft.Column([
-            ft.Text(f"R3: {stock['r3']}  S3: {stock['s3']}"),
-            ft.Text(f"Range: {stock['pct_range']}%", color="green" if stock['pct_range'] < 5 else "orange"),
-            ft.Divider(),
-            comment_field
-        ], tight=True, width=400)
         
         page.dialog = dialog
         dialog.open = True
@@ -221,90 +288,90 @@ def main(page: ft.Page):
     def render_list():
         results_list.controls.clear()
         if not stocks_data:
-            results_list.controls.append(ft.Text("No stocks found matching criteria."))
+            # Empty state
+            results_list.controls.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.icons.SEARCH_OFF, size=50, color=ft.colors.GREY_400),
+                        ft.Text("No stocks found (< 6.5% range)", color=ft.colors.GREY_500)
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    alignment=ft.alignment.center,
+                    padding=40
+                )
+            )
         else:
             for stock in stocks_data:
-                has_comment = stock["ticker"] in saved_comments and saved_comments[stock["ticker"]]
-                
-                # Card for each stock
-                card = ft.Card(
-                    content=ft.Container(
-                        content=ft.Column([
-                            ft.ListTile(
-                                leading=ft.Icon(ft.icons.SHOW_CHART),
-                                title=ft.Text(f"{stock['ticker']}"),
-                                subtitle=ft.Text(f"Range: {stock['pct_range']}% | Close: {stock['close']}"),
-                                trailing=ft.IconButton(
-                                    icon=ft.icons.NOTE_ADD if not has_comment else ft.icons.NOTE,
-                                    icon_color="blue" if has_comment else "grey",
-                                    on_click=lambda e, s=stock: open_comment_dialog(s)
-                                ),
-                            ),
-                            ft.Container(
-                                content=ft.Row([
-                                    ft.Text(f"R3: {stock['r3']}", weight="bold"),
-                                    ft.Text(f"S3: {stock['s3']}", weight="bold"),
-                                ], alignment=ft.MainAxisAlignment.SPACE_EVENLY),
-                                padding=10
-                            )
-                        ]),
-                        padding=5
-                    )
-                )
-                results_list.controls.append(card)
+                results_list.controls.append(create_stock_card(stock))
         page.update()
 
     def run_scan(e):
-        status_text.value = "Fetching symbols..."
-        progress_bar.visible = True
+        # Disable FAB
+        fab.disabled = True
+        fab.content = ft.ProgressRing(width=20, height=20, stroke_width=2, color=ft.colors.ON_PRIMARY_CONTAINER)
         page.update()
         
-        # Run in thread to not freeze UI
+        show_snack("Fetching symbols (limit 30)...")
+        
         def scan_thread():
-            symbols = fetch_nifty500_symbols()
-            # For demo, limit to first 20 or user argument 
-            # In a real app, maybe process in chunks
-            symbols = symbols[:20] if len(symbols) > 20 else symbols 
-            
-            results = []
-            
-            total = len(symbols)
-            for i, tick in enumerate(symbols):
-                update_status(f"Scanning {tick} ({i+1}/{total})...")
-                res = process_ticker(tick)
-                if res and res["pct_range"] < 6.5: # Filter
-                    results.append(res)
-            
-            # Sort by pct range
-            results.sort(key=lambda x: x["pct_range"])
-            
-            stocks_data.clear()
-            stocks_data.extend(results)
-            
-            scan_complete()
+            try:
+                symbols = fetch_nifty500_symbols()
+                symbols = symbols[:30] if len(symbols) > 0 else [] 
+                
+                results = []
+                total = len(symbols)
+                
+                for i, tick in enumerate(symbols):
+                    res = process_ticker(tick)
+                    if res and res["pct_range"] < 6.5: 
+                        results.append(res)
+                
+                results.sort(key=lambda x: x["pct_range"])
+                stocks_data.clear()
+                stocks_data.extend(results)
+                
+                scan_complete(len(stocks_data))
+                
+            except Exception as Ex:
+                print(Ex)
+                scan_error(str(Ex))
 
         threading.Thread(target=scan_thread, daemon=True).start()
 
-    def update_status(msg):
-        status_text.value = msg
-        page.update()
-
-    def scan_complete():
-        status_text.value = f"Scan complete. Found {len(stocks_data)} stocks."
-        progress_bar.visible = False
+    def scan_complete(count):
+        fab.disabled = False
+        fab.content = ft.Icon(ft.icons.REFRESH)
+        show_snack(f"Found {count} stocks.")
         render_list()
 
+    def scan_error(err_msg):
+        fab.disabled = False
+        fab.content = ft.Icon(ft.icons.REFRESH)
+        show_snack(f"Error: {err_msg}", is_error=True)
+        page.update()
+
     # -- Layout --
-    page.add(
-        ft.Row([
-            ft.Text("Camarilla Screener", size=20, weight="bold"),
-            ft.IconButton(ft.icons.REFRESH, on_click=run_scan)
-        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-        progress_bar,
-        status_text,
-        ft.Divider(),
-        results_list
+    
+    app_bar = ft.AppBar(
+        leading=ft.Icon(ft.icons.SHOW_CHART),
+        leading_width=40,
+        title=ft.Text("Camarilla Screener"),
+        center_title=False,
+        bgcolor=ft.colors.SURFACE_VARIANT,
+        actions=[]
     )
+    
+    fab = ft.FloatingActionButton(
+        icon=ft.icons.REFRESH,
+        text="Scan",
+        on_click=run_scan,
+        bgcolor=ft.colors.PRIMARY_CONTAINER,
+    )
+
+    page.add(
+        app_bar,
+        ft.Container(results_list, expand=True)
+    )
+    page.floating_action_button = fab
 
 if __name__ == "__main__":
     ft.app(target=main)
