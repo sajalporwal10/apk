@@ -38,4 +38,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: nifty500-release
-        path: build/app/outputs/flutter-apk/app-release.apk
+        path: '**/*.apk'
