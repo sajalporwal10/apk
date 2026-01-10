@@ -2,7 +2,7 @@ import flet as ft
 import time
 import requests
 import pandas as pd
-import yfinance as yf
+# import yfinance as yf # Removing yfinance to prevent Android crash
 from datetime import datetime
 import threading
 
@@ -11,44 +11,47 @@ import threading
 NIFTY500_CSV_URL = "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv"
 CAM_MULT = 1.1
 
-def fetch_nifty500_symbols():
+# Helper to fetch data via requests directly
+def get_yahoo_data(ticker):
     try:
+        # Use Yahoo Finance Chart API
+        # Range 5y to ensure we get enough monthly data
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1mo&range=5y"
         headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
-        r = requests.get(NIFTY500_CSV_URL, headers=headers, timeout=30)
-        r.raise_for_status()
-        import io
-        df = pd.read_csv(io.StringIO(r.text))
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
         
-        # Symbol column detection
-        col_candidates = [c for c in df.columns if any(x in c.lower() for x in ("symbol", "ticker", "code"))]
-        sym_col = col_candidates[0] if col_candidates else df.columns[0]
+        result = data.get("chart", {}).get("result", [])
+        if not result: return None
         
-        symbols = df[sym_col].astype(str).str.strip().tolist()
-        yahoo_symbols = []
-        for s in symbols:
-            s = s.upper()
-            if not s or s.lower() == "nan": continue
-            if s.endswith(".NS") or s.endswith(".BO"):
-                yahoo_symbols.append(s)
-            else:
-                yahoo_symbols.append(s + ".NS")
-        return list(set(yahoo_symbols)) # Dedupe
+        quote = result[0]
+        timestamps = quote.get("timestamp", [])
+        indicators = quote.get("indicators", {}).get("quote", [{}])[0]
+        
+        opens = indicators.get("open", [])
+        highs = indicators.get("high", [])
+        lows = indicators.get("low", [])
+        closes = indicators.get("close", [])
+        
+        # Create DataFrame
+        df_dict = {
+            "Open": opens,
+            "High": highs,
+            "Low": lows,
+            "Close": closes
+        }
+        df = pd.DataFrame(df_dict, index=pd.to_datetime(timestamps, unit='s'))
+        df.dropna(inplace=True)
+        return df
     except Exception as e:
-        print(f"Error fetching symbols: {e}")
-        return []
+        print(f"Error fetching {ticker}: {e}")
+        return None
 
 def fetch_monthly_data(ticker):
-    try:
-        df = yf.download(ticker, period="800d", interval="1mo", progress=False, auto_adjust=False, threads=False)
-        if df is None or df.empty: return None
-        df.index = pd.to_datetime(df.index)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        return df
-    except:
-        return None
+    return get_yahoo_data(ticker)
 
 def process_ticker(ticker):
     # Logic to compute R3/S3
