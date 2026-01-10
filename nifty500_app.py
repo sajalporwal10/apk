@@ -1,22 +1,67 @@
 import flet as ft
 import time
 import requests
-import pandas as pd
-# import yfinance as yf # Removing yfinance to prevent Android crash
-from datetime import datetime
-import threading
+import csv
+import io
 
-# --- Core Logic (Adapted from original script) ---
+# --- Core Logic (Pure Python version) ---
 
 NIFTY500_CSV_URL = "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv"
 CAM_MULT = 1.1
 
-# Helper to fetch data via requests directly
-def get_yahoo_data(ticker):
+def fetch_nifty500_symbols():
     try:
-        # Use Yahoo Finance Chart API
-        # Range 5y to ensure we get enough monthly data
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1mo&range=5y"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+        r = requests.get(NIFTY500_CSV_URL, headers=headers, timeout=30)
+        r.raise_for_status()
+        
+        # Parse CSV using standard library
+        f = io.StringIO(r.text)
+        reader = csv.DictReader(f)
+        
+        # Normalize column names to find the symbol column
+        fieldnames = [fn.strip() for fn in reader.fieldnames] if reader.fieldnames else []
+        sym_col = None
+        for col in fieldnames:
+             if "symbol" in col.lower() or "ticker" in col.lower() or "code" in col.lower():
+                 sym_col = col
+                 break
+        
+        if not sym_col and fieldnames:
+            sym_col = fieldnames[0] # Fallback
+            
+        yahoo_symbols = []
+        for row in reader:
+            # reader keys might match original fieldnames (with spaces?)
+            # DictReader uses the keys from fieldnames (which we haven't stripped in the reader obj, only in our list)
+            # So let's find the specific key in row that matches our sym_col name
+            val = row.get(sym_col)
+            if not val:
+                 # Try finding key with whitespace
+                 for k in row.keys():
+                     if k.strip() == sym_col:
+                         val = row[k]
+                         break
+            
+            if val:
+                s = val.strip().upper()
+                if not s or s == "NAN": continue
+                if s.endswith(".NS") or s.endswith(".BO"):
+                    yahoo_symbols.append(s)
+                else:
+                    yahoo_symbols.append(s + ".NS")
+                    
+        return list(set(yahoo_symbols))
+    except Exception as e:
+        print(f"Error fetching symbols: {e}")
+        return []
+
+def get_yahoo_data_pure(ticker):
+    try:
+        # Range 2y to ensure we get enough monthly data
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1mo&range=2y"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
@@ -36,41 +81,55 @@ def get_yahoo_data(ticker):
         lows = indicators.get("low", [])
         closes = indicators.get("close", [])
         
-        # Create DataFrame
-        df_dict = {
-            "Open": opens,
-            "High": highs,
-            "Low": lows,
-            "Close": closes
-        }
-        df = pd.DataFrame(df_dict, index=pd.to_datetime(timestamps, unit='s'))
-        df.dropna(inplace=True)
-        return df
+        if not timestamps or not closes: return None
+        
+        # Combine into list of dicts for easier processing
+        candles = []
+        for i in range(len(timestamps)):
+            if closes[i] is None: continue # Skip incomplete data
+            
+            ts = timestamps[i]
+            dt = datetime.utcfromtimestamp(ts)
+            candles.append({
+                "date": dt,
+                "high": highs[i] if highs[i] is not None else 0,
+                "low": lows[i] if lows[i] is not None else 0,
+                "close": closes[i] if closes[i] is not None else 0
+            })
+            
+        return candles
     except Exception as e:
         print(f"Error fetching {ticker}: {e}")
         return None
 
-def fetch_monthly_data(ticker):
-    return get_yahoo_data(ticker)
-
 def process_ticker(ticker):
-    # Logic to compute R3/S3
-    monthly_df = fetch_monthly_data(ticker)
-    if monthly_df is None or monthly_df.empty: return None
+    candles = get_yahoo_data_pure(ticker)
+    if not candles: return None
+    
+    # Sort just in case
+    candles.sort(key=lambda x: x["date"])
     
     now_ts = datetime.utcnow()
-    monthly = monthly_df.sort_index()
-    completed = monthly[[not (idx.month == now_ts.month and idx.year == now_ts.year) for idx in monthly.index]]
     
-    if completed.empty:
-        if len(monthly) >= 2: completed = monthly.iloc[:-1]
-        else: return None
+    # Logic: Find the last COMPLETED month.
+    # A candle is "current month" if cand.year == now.year and cand.month == now.month
+    # We want the latest candle that is NOT current month.
+    
+    previous_month_candle = None
+    
+    # Iterate backwards
+    for i in range(len(candles) - 1, -1, -1):
+        c = candles[i]
+        if not (c["date"].year == now_ts.year and c["date"].month == now_ts.month):
+            previous_month_candle = c
+            break
             
-    row = completed.iloc[-1]
-    
-    h = float(row.get("High", 0))
-    l = float(row.get("Low", 0))
-    c = float(row.get("Close", 0))
+    if not previous_month_candle:
+        return None
+        
+    h = float(previous_month_candle["high"])
+    l = float(previous_month_candle["low"])
+    c = float(previous_month_candle["close"])
     
     diff = h - l
     r3 = c + (diff * CAM_MULT / 4.0)
@@ -79,12 +138,16 @@ def process_ticker(ticker):
     if s3 == 0: return None
     pct_range = ((r3 - s3) / s3 * 100.0)
     
+    # Current Close (from the VERY LATEST candle, even if partial month)
+    # Using the last candle in the list for 'Close' price reference
+    last_close = float(candles[-1]["close"])
+    
     return {
         "ticker": ticker,
         "r3": round(r3, 2),
         "s3": round(s3, 2),
         "pct_range": round(pct_range, 2),
-        "close": round(c, 2)
+        "close": round(last_close, 2)
     }
 
 # --- UI Application ---
