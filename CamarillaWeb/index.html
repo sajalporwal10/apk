@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camarilla Screener | NIFTY 500</title>
+    <meta name="description" content="Screen NIFTY 500 stocks using monthly Camarilla pivot points. Find stocks with narrow R3-S3 range for potential breakouts.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo-section">
+                    <div class="logo">📊</div>
+                    <div class="title-group">
+                        <h1 class="title">Camarilla Screener</h1>
+                        <p class="subtitle">NIFTY 500 • <span id="refMonth"></span></p>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button id="exportBtn" class="btn btn-secondary" disabled>
+                        <span class="btn-icon">📤</span>
+                        Export CSV
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-value" id="stockCount">0</span>
+                <span class="stat-label">Stocks Found</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <span class="stat-value">&lt; 6.5%</span>
+                <span class="stat-label">Range Filter</span>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat-item">
+                <span class="stat-value" id="lastScan">Never</span>
+                <span class="stat-label">Last Scan</span>
+            </div>
+        </div>
+
+        <!-- Scan Button -->
+        <div class="scan-section">
+            <button id="scanBtn" class="btn btn-primary btn-large">
+                <span class="btn-icon" id="scanIcon">🔍</span>
+                <span id="scanText">Start Scan</span>
+            </button>
+        </div>
+
+        <!-- Progress Section -->
+        <div id="progressSection" class="progress-section hidden">
+            <div class="progress-card">
+                <div class="progress-header">
+                    <span class="progress-title">Scanning NIFTY 500</span>
+                    <span class="progress-counter" id="progressCounter">0 / 0</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+                <p class="progress-ticker">Analyzing: <span id="currentTicker">-</span></p>
+                <p class="progress-hint">⏱ This may take 3-5 minutes for all 500 stocks</p>
+            </div>
+        </div>
+
+        <!-- Empty State -->
+        <div id="emptyState" class="empty-state">
+            <div class="empty-icon">📊</div>
+            <h2 class="empty-title">No Results Yet</h2>
+            <p class="empty-text">Click "Start Scan" to fetch NIFTY 500 stocks and calculate Camarilla levels</p>
+        </div>
+
+        <!-- Results Section -->
+        <div id="resultsSection" class="results-section hidden">
+            <div class="results-header">
+                <h2 class="results-title">Narrow Range Stocks</h2>
+                <p class="results-subtitle">Sorted by tightest R3-S3 range</p>
+            </div>
+            <div id="stockList" class="stock-list"></div>
+        </div>
+
+        <!-- Stock Details Modal -->
+        <div id="stockModal" class="modal hidden">
+            <div class="modal-backdrop"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h2 class="modal-ticker" id="modalTicker"></h2>
+                        <p class="modal-subtitle" id="modalSubtitle"></p>
+                    </div>
+                    <button class="modal-close" id="modalClose">✕</button>
+                </div>
+                <div class="modal-body">
+                    <!-- OHLC Section -->
+                    <div class="modal-section">
+                        <h3 class="section-title">Monthly OHLC</h3>
+                        <div class="data-card">
+                            <div class="data-row">
+                                <span class="data-label">Open</span>
+                                <span class="data-value" id="modalOpen"></span>
+                            </div>
+                            <div class="data-row">
+                                <span class="data-label">High</span>
+                                <span class="data-value" id="modalHigh"></span>
+                            </div>
+                            <div class="data-row">
+                                <span class="data-label">Low</span>
+                                <span class="data-value" id="modalLow"></span>
+                            </div>
+                            <div class="data-row">
+                                <span class="data-label">Close</span>
+                                <span class="data-value" id="modalClose"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Camarilla Levels -->
+                    <div class="modal-section">
+                        <h3 class="section-title">Camarilla Levels</h3>
+                        <div class="data-card">
+                            <div class="data-row highlight">
+                                <span class="data-label">Resistance 3 (R3)</span>
+                                <span class="data-value highlight-value" id="modalR3"></span>
+                            </div>
+                            <div class="data-row highlight">
+                                <span class="data-label">Support 3 (S3)</span>
+                                <span class="data-value highlight-value" id="modalS3"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Range Analysis -->
+                    <div class="modal-section">
+                        <h3 class="section-title">Range Analysis</h3>
+                        <div class="range-card">
+                            <span class="range-label">R3-S3 Range</span>
+                            <span class="range-value" id="modalRange"></span>
+                            <p class="range-description" id="modalDescription"></p>
+                        </div>
+                    </div>
+
+                    <!-- Formula -->
+                    <div class="modal-section">
+                        <h3 class="section-title">Formula Reference</h3>
+                        <div class="formula-card">
+                            <code>R3 = Close + (High - Low) × 1.1 / 4</code>
+                            <code>S3 = Close - (High - Low) × 1.1 / 4</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
