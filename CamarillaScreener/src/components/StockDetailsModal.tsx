@@ -1,21 +1,57 @@
-// Stock Details Modal Component - Cyberpunk Theme
+// Stock Details Modal Component - Cyberpunk Theme with Comments
 
-import React from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StockData } from '../types';
+import { saveComment, getComment } from '../services/storage';
 
 interface StockDetailsModalProps {
     stock: StockData | null;
     visible: boolean;
     onClose: () => void;
+    onCommentSaved?: () => void;
 }
 
 export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
     stock,
     visible,
-    onClose
+    onClose,
+    onCommentSaved
 }) => {
+    const [comment, setComment] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        if (stock && visible) {
+            loadExistingComment();
+        }
+    }, [stock, visible]);
+
+    const loadExistingComment = async () => {
+        if (!stock) return;
+        const existing = await getComment(stock.ticker);
+        if (existing) {
+            setComment(existing.comment);
+        } else {
+            setComment('');
+        }
+    };
+
+    const handleSaveComment = async () => {
+        if (!stock) return;
+        setIsSaving(true);
+        try {
+            await saveComment(stock.ticker, comment);
+            Alert.alert('Saved!', 'Your comment has been saved.');
+            onCommentSaved?.();
+        } catch (error) {
+            Alert.alert('Error', 'Could not save comment.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     if (!stock) return null;
 
     const DataRow = ({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) => (
@@ -32,7 +68,10 @@ export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
             visible={visible}
             onRequestClose={onClose}
         >
-            <View style={styles.overlay}>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={styles.overlay}
+            >
                 <LinearGradient
                     colors={['#1a0a2e', '#12142a', '#0d1b2a']}
                     style={styles.modalContainer}
@@ -55,7 +94,30 @@ export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
                         </TouchableOpacity>
                     </View>
 
-                    <ScrollView style={styles.content}>
+                    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+                        {/* Range Analysis - Made prominent */}
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>🎯 Range Analysis</Text>
+                            <LinearGradient
+                                colors={['rgba(0, 255, 255, 0.15)', 'rgba(255, 0, 255, 0.15)']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.rangeCard}
+                            >
+                                <Text style={styles.rangeLabel}>R3-S3 Range</Text>
+                                <Text style={styles.rangeValue}>{stock.pctRangeR3?.toFixed(2)}%</Text>
+                                <Text style={styles.rangeDescription}>
+                                    {stock.pctRangeR3 && stock.pctRangeR3 < 2.5
+                                        ? '🔥 Very tight consolidation - High breakout potential'
+                                        : stock.pctRangeR3 && stock.pctRangeR3 < 4
+                                            ? '📊 Moderate consolidation - Watch for breakout'
+                                            : stock.pctRangeR3 && stock.pctRangeR3 < 5
+                                                ? '📈 Good range - Potential opportunity'
+                                                : '📉 Wider range - Less predictable'}
+                                </Text>
+                            </LinearGradient>
+                        </View>
+
                         {/* OHLC Section */}
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>📊 Monthly OHLC</Text>
@@ -76,25 +138,37 @@ export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
                             </View>
                         </View>
 
-                        {/* Range Analysis */}
+                        {/* Comments Section */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>🎯 Range Analysis</Text>
-                            <LinearGradient
-                                colors={['rgba(0, 255, 255, 0.15)', 'rgba(255, 0, 255, 0.15)']}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={styles.rangeCard}
-                            >
-                                <Text style={styles.rangeLabel}>R3-S3 Range</Text>
-                                <Text style={styles.rangeValue}>{stock.pctRangeR3?.toFixed(2)}%</Text>
-                                <Text style={styles.rangeDescription}>
-                                    {stock.pctRangeR3 && stock.pctRangeR3 < 2.5
-                                        ? '🔥 Very tight consolidation - High breakout potential'
-                                        : stock.pctRangeR3 && stock.pctRangeR3 < 4
-                                            ? '📊 Moderate consolidation - Watch for breakout'
-                                            : '📉 Wider range - Less predictable'}
-                                </Text>
-                            </LinearGradient>
+                            <Text style={styles.sectionTitle}>💬 Your Notes</Text>
+                            <View style={styles.commentCard}>
+                                <TextInput
+                                    style={styles.commentInput}
+                                    placeholder="Add your notes about this stock..."
+                                    placeholderTextColor="rgba(255,255,255,0.4)"
+                                    value={comment}
+                                    onChangeText={setComment}
+                                    multiline
+                                    numberOfLines={4}
+                                    textAlignVertical="top"
+                                />
+                                <TouchableOpacity
+                                    style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+                                    onPress={handleSaveComment}
+                                    disabled={isSaving}
+                                >
+                                    <LinearGradient
+                                        colors={['#00FFFF', '#FF00FF']}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 0 }}
+                                        style={styles.saveButtonGradient}
+                                    >
+                                        <Text style={styles.saveButtonText}>
+                                            {isSaving ? 'Saving...' : '💾 Save Note'}
+                                        </Text>
+                                    </LinearGradient>
+                                </TouchableOpacity>
+                            </View>
                         </View>
 
                         {/* Formula Reference */}
@@ -107,7 +181,7 @@ export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
                         </View>
                     </ScrollView>
                 </LinearGradient>
-            </View>
+            </KeyboardAvoidingView>
         </Modal>
     );
 };
@@ -121,7 +195,7 @@ const styles = StyleSheet.create({
     modalContainer: {
         borderTopLeftRadius: 32,
         borderTopRightRadius: 32,
-        maxHeight: '90%',
+        maxHeight: '92%',
         borderWidth: 1,
         borderColor: 'rgba(255, 0, 255, 0.4)',
         borderBottomWidth: 0,
@@ -241,6 +315,41 @@ const styles = StyleSheet.create({
         marginTop: 16,
         textAlign: 'center',
         lineHeight: 22,
+    },
+    commentCard: {
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        borderRadius: 20,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(0, 255, 255, 0.3)',
+    },
+    commentInput: {
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        borderRadius: 12,
+        padding: 16,
+        color: '#FFFFFF',
+        fontSize: 15,
+        minHeight: 100,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 0, 255, 0.3)',
+        marginBottom: 12,
+    },
+    saveButton: {
+        borderRadius: 12,
+        overflow: 'hidden',
+    },
+    saveButtonDisabled: {
+        opacity: 0.5,
+    },
+    saveButtonGradient: {
+        paddingVertical: 14,
+        alignItems: 'center',
+    },
+    saveButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '700',
+        letterSpacing: 1,
     },
     formulaCard: {
         backgroundColor: 'rgba(0, 0, 0, 0.4)',

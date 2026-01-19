@@ -26,7 +26,9 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.INTERNET",
-        "android.permission.ACCESS_NETWORK_STATE"
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {
@@ -37,8 +39,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "sajalstonks"
+        "projectId": "f6ab3ab0-38c2-4099-bc4c-abbdd6660356"
       }
-    }
+    },
+    "owner": "sajalporwal"
   }
 }

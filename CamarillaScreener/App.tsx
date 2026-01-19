@@ -1,4 +1,4 @@
-// Screener - Main Application (Cyberpunk Theme)
+// Screener - Main Application (Cyberpunk Theme with Tabs)
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -12,18 +12,20 @@ import {
   RefreshControl,
   Alert,
   ActivityIndicator,
+  AppState,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { StockData } from './src/types';
-import { StockListItem, StockDetailsModal, ScanProgress } from './src/components';
+import { StockData, RangeFilter, TabType, StockComment } from './src/types';
+import { StockListItem, StockDetailsModal, ScanProgress, CommentsList } from './src/components';
 import { scanAllStocks } from './src/services/api';
-import { saveScanResults, loadCachedResults, getCacheTimestamp } from './src/services/storage';
+import { saveScanResults, loadCachedResults, getCacheTimestamp, getStocksWithComments } from './src/services/storage';
 import { exportToCSV } from './src/services/export';
 import { getLastCompletedMonth } from './src/utils/calculations';
 
 export default function App() {
   const [stocks, setStocks] = useState<StockData[]>([]);
+  const [stocksWithComments, setStocksWithComments] = useState<(StockData & { comment: StockComment })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, ticker: '' });
@@ -32,12 +34,42 @@ export default function App() {
   const [lastScanDate, setLastScanDate] = useState<Date | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
+  // New state for tabs and filters
+  const [activeTab, setActiveTab] = useState<TabType>('screener');
+  const [rangeFilter, setRangeFilter] = useState<RangeFilter>('under5');
+
   const cancelRef = useRef(false);
+  const appState = useRef(AppState.currentState);
 
   // Load cached results on app start
   useEffect(() => {
     loadInitialData();
+
+    // Listen for app state changes for background scanning
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        // App has come to foreground - refresh comments
+        refreshComments();
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
+
+  // Refresh comments when stocks change
+  useEffect(() => {
+    if (stocks.length > 0) {
+      refreshComments();
+    }
+  }, [stocks]);
+
+  const refreshComments = async () => {
+    const withComments = await getStocksWithComments(stocks);
+    setStocksWithComments(withComments);
+  };
 
   const loadInitialData = async () => {
     setIsLoading(true);
@@ -120,6 +152,10 @@ export default function App() {
     setModalVisible(true);
   };
 
+  const handleCommentSaved = () => {
+    refreshComments();
+  };
+
   const formatDate = (date: Date | null): string => {
     if (!date) return 'Never';
     return date.toLocaleDateString('en-IN', {
@@ -131,6 +167,16 @@ export default function App() {
     });
   };
 
+  // Filter stocks based on range filter
+  const getFilteredStocks = (): StockData[] => {
+    if (rangeFilter === 'under5') {
+      return stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 < 5);
+    } else {
+      return stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 >= 5 && s.pctRangeR3 <= 6.5);
+    }
+  };
+
+  const filteredStocks = getFilteredStocks();
   const { label: refMonth } = getLastCompletedMonth();
 
   return (
@@ -162,87 +208,168 @@ export default function App() {
           </View>
         </View>
 
-        {/* Stats Bar */}
-        <View style={styles.statsBar}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stocks.length}</Text>
-            <Text style={styles.statLabel}>Stocks</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>&lt; 6.5%</Text>
-            <Text style={styles.statLabel}>Range Filter</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{formatDate(lastScanDate).split(',')[0]}</Text>
-            <Text style={styles.statLabel}>Last Scan</Text>
-          </View>
+        {/* Main Tabs */}
+        <View style={styles.tabsContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'screener' && styles.activeTab]}
+            onPress={() => setActiveTab('screener')}
+          >
+            <Text style={[styles.tabText, activeTab === 'screener' && styles.activeTabText]}>
+              📊 Screener
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'comments' && styles.activeTab]}
+            onPress={() => setActiveTab('comments')}
+          >
+            <Text style={[styles.tabText, activeTab === 'comments' && styles.activeTabText]}>
+              💬 Notes ({stocksWithComments.length})
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Scan Button */}
-        <TouchableOpacity
-          style={styles.scanButtonContainer}
-          onPress={handleStartScan}
-          activeOpacity={0.8}
-        >
-          <LinearGradient
-            colors={isScanning ? ['#FF0055', '#FF00FF'] : ['#00FFFF', '#FF00FF']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.scanButton}
-          >
-            <Text style={styles.scanButtonText}>
-              {isScanning ? '⏹ Stop Scan' : '🔍 Start Scan'}
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
+        {/* Screener Tab Content */}
+        {activeTab === 'screener' && (
+          <>
+            {/* Range Filter Tabs */}
+            <View style={styles.filterContainer}>
+              <TouchableOpacity
+                style={[styles.filterTab, rangeFilter === 'under5' && styles.activeFilterTab]}
+                onPress={() => setRangeFilter('under5')}
+              >
+                <LinearGradient
+                  colors={rangeFilter === 'under5' ? ['#00FFFF', '#00CCFF'] : ['transparent', 'transparent']}
+                  style={styles.filterGradient}
+                >
+                  <Text style={[styles.filterText, rangeFilter === 'under5' && styles.activeFilterText]}>
+                    🔥 Under 5%
+                  </Text>
+                  <Text style={[styles.filterCount, rangeFilter === 'under5' && styles.activeFilterCount]}>
+                    {stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 < 5).length}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
 
-        {/* Scan Progress */}
-        {isScanning && (
-          <ScanProgress
-            current={scanProgress.current}
-            total={scanProgress.total}
-            currentTicker={scanProgress.ticker}
-          />
-        )}
+              <TouchableOpacity
+                style={[styles.filterTab, rangeFilter === 'between5and6.5' && styles.activeFilterTab]}
+                onPress={() => setRangeFilter('between5and6.5')}
+              >
+                <LinearGradient
+                  colors={rangeFilter === 'between5and6.5' ? ['#FF00FF', '#CC00FF'] : ['transparent', 'transparent']}
+                  style={styles.filterGradient}
+                >
+                  <Text style={[styles.filterText, rangeFilter === 'between5and6.5' && styles.activeFilterText]}>
+                    📊 5% - 6.5%
+                  </Text>
+                  <Text style={[styles.filterCount, rangeFilter === 'between5and6.5' && styles.activeFilterCount]}>
+                    {stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 >= 5 && s.pctRangeR3 <= 6.5).length}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
 
-        {/* Loading State */}
-        {isLoading && !isScanning && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#00FFFF" />
-            <Text style={styles.loadingText}>Loading cached results...</Text>
-          </View>
-        )}
+            {/* Stats Bar */}
+            <View style={styles.statsBar}>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{filteredStocks.length}</Text>
+                <Text style={styles.statLabel}>Filtered</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{stocks.length}</Text>
+                <Text style={styles.statLabel}>Total</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{formatDate(lastScanDate).split(',')[0]}</Text>
+                <Text style={styles.statLabel}>Last Scan</Text>
+              </View>
+            </View>
 
-        {/* Empty State */}
-        {!isLoading && !isScanning && stocks.length === 0 && (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>📊</Text>
-            <Text style={styles.emptyTitle}>No Results Yet</Text>
-            <Text style={styles.emptyText}>
-              Tap "Start Scan" to fetch NIFTY 500 stocks and calculate Camarilla levels
-            </Text>
-          </View>
-        )}
+            {/* Scan Button */}
+            <TouchableOpacity
+              style={styles.scanButtonContainer}
+              onPress={handleStartScan}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={isScanning ? ['#FF0055', '#FF00FF'] : ['#00FFFF', '#FF00FF']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.scanButton}
+              >
+                <Text style={styles.scanButtonText}>
+                  {isScanning ? '⏹ Stop Scan' : '🔍 Start Scan'}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
 
-        {/* Stock List */}
-        {!isLoading && !isScanning && stocks.length > 0 && (
-          <FlatList
-            data={stocks}
-            keyExtractor={(item) => item.ticker}
-            renderItem={({ item }) => (
-              <StockListItem stock={item} onPress={handleStockPress} />
-            )}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl
-                refreshing={false}
-                onRefresh={handleStartScan}
-                tintColor="#00FFFF"
+            {/* Scan Progress */}
+            {isScanning && (
+              <ScanProgress
+                current={scanProgress.current}
+                total={scanProgress.total}
+                currentTicker={scanProgress.ticker}
               />
-            }
+            )}
+
+            {/* Loading State */}
+            {isLoading && !isScanning && (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#00FFFF" />
+                <Text style={styles.loadingText}>Loading cached results...</Text>
+              </View>
+            )}
+
+            {/* Empty State */}
+            {!isLoading && !isScanning && stocks.length === 0 && (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyIcon}>📊</Text>
+                <Text style={styles.emptyTitle}>No Results Yet</Text>
+                <Text style={styles.emptyText}>
+                  Tap "Start Scan" to fetch NIFTY 500 stocks and calculate Camarilla levels
+                </Text>
+              </View>
+            )}
+
+            {/* Stock List */}
+            {!isLoading && !isScanning && filteredStocks.length > 0 && (
+              <FlatList
+                data={filteredStocks}
+                keyExtractor={(item) => item.ticker}
+                renderItem={({ item }) => (
+                  <StockListItem stock={item} onPress={handleStockPress} />
+                )}
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={false}
+                    onRefresh={handleStartScan}
+                    tintColor="#00FFFF"
+                  />
+                }
+              />
+            )}
+
+            {/* No stocks in filter */}
+            {!isLoading && !isScanning && stocks.length > 0 && filteredStocks.length === 0 && (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyIcon}>🔍</Text>
+                <Text style={styles.emptyTitle}>No Stocks in Range</Text>
+                <Text style={styles.emptyText}>
+                  No stocks found with {rangeFilter === 'under5' ? 'range under 5%' : 'range between 5% and 6.5%'}
+                </Text>
+              </View>
+            )}
+          </>
+        )}
+
+        {/* Comments Tab Content */}
+        {activeTab === 'comments' && (
+          <CommentsList
+            stocksWithComments={stocksWithComments}
+            onStockPress={handleStockPress}
           />
         )}
 
@@ -254,6 +381,7 @@ export default function App() {
             setModalVisible(false);
             setSelectedStock(null);
           }}
+          onCommentSaved={handleCommentSaved}
         />
       </SafeAreaView>
     </LinearGradient>
@@ -272,8 +400,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
   title: {
     fontSize: 32,
@@ -285,9 +413,9 @@ const styles = StyleSheet.create({
     textShadowRadius: 10,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#FF00FF',
-    marginTop: 4,
+    marginTop: 2,
     letterSpacing: 1,
   },
   headerButtons: {
@@ -295,9 +423,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   exportButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: '#00FFFF',
     alignItems: 'center',
     justifyContent: 'center',
@@ -310,50 +438,120 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   exportButtonText: {
-    fontSize: 22,
+    fontSize: 20,
   },
   buttonDisabled: {
     opacity: 0.5,
+  },
+  // Main Tabs
+  tabsContainer: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 16,
+    padding: 4,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  activeTab: {
+    backgroundColor: 'rgba(0, 255, 255, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 255, 255, 0.5)',
+  },
+  tabText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  activeTabText: {
+    color: '#00FFFF',
+    fontWeight: '700',
+  },
+  // Filter Tabs
+  filterContainer: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    gap: 10,
+  },
+  filterTab: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  activeFilterTab: {
+    borderWidth: 0,
+  },
+  filterGradient: {
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  filterText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  activeFilterText: {
+    color: '#000',
+    fontWeight: '700',
+  },
+  filterCount: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  activeFilterCount: {
+    color: '#000',
   },
   statsBar: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     marginHorizontal: 16,
-    marginVertical: 12,
-    padding: 18,
-    borderRadius: 20,
+    marginBottom: 10,
+    padding: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(0, 255, 255, 0.3)',
-    backdropFilter: 'blur(10px)',
+    borderColor: 'rgba(0, 255, 255, 0.2)',
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: '#00FFFF',
     textShadowColor: '#00FFFF',
     textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 8,
+    textShadowRadius: 6,
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#FF00FF',
-    marginTop: 4,
+    marginTop: 3,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
   statDivider: {
     width: 1,
-    backgroundColor: 'rgba(255, 0, 255, 0.4)',
-    marginVertical: 4,
+    backgroundColor: 'rgba(255, 0, 255, 0.3)',
+    marginVertical: 2,
   },
   scanButtonContainer: {
     marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 20,
+    marginVertical: 6,
+    borderRadius: 18,
     overflow: 'hidden',
     shadowColor: '#FF00FF',
     shadowOffset: { width: 0, height: 4 },
@@ -362,13 +560,13 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   scanButton: {
-    paddingVertical: 18,
+    paddingVertical: 16,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   scanButtonText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 1,
@@ -395,27 +593,27 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   emptyIcon: {
-    fontSize: 80,
-    marginBottom: 20,
+    fontSize: 70,
+    marginBottom: 16,
   },
   emptyTitle: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '800',
     color: '#FFFFFF',
-    marginBottom: 12,
+    marginBottom: 10,
     textShadowColor: '#FF00FF',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 10,
   },
   emptyText: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#00FFFF',
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 22,
     opacity: 0.8,
   },
   listContent: {
-    paddingVertical: 8,
-    paddingBottom: 24,
+    paddingVertical: 4,
+    paddingBottom: 20,
   },
 });

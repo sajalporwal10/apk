@@ -14,6 +14,12 @@ export interface StockData {
     error: string;
 }
 
+export interface StockComment {
+    ticker: string;
+    comment: string;
+    updatedAt: number;
+}
+
 export interface ScanProgress {
     current: number;
     total: number;
@@ -26,6 +32,14 @@ export interface CachedScanResult {
     timestamp: number;
     data: StockData[];
 }
+
+export interface CachedComments {
+    comments: { [ticker: string]: StockComment };
+}
+
+export type RangeFilter = 'under5' | 'between5and6.5';
+
+export type TabType = 'screener' | 'comments';
 
 export interface YahooChartResult {
     timestamp: number[];
