@@ -40,28 +40,22 @@ jobs:
       working-directory: CamarillaScreener
       run: npx expo prebuild --platform android --clean
       
-    - name: Build APK with Gradle
+    - name: Build Debug APK (auto-signed)
       working-directory: CamarillaScreener/android
-      run: ./gradlew assembleRelease
+      run: ./gradlew assembleDebug
       
-    - name: Find APK file
-      id: find-apk
+    - name: Find and rename APK
       working-directory: CamarillaScreener
       run: |
-        APK_PATH=$(find . -name "*.apk" -type f | head -1)
-        echo "APK_PATH=$APK_PATH" >> $GITHUB_OUTPUT
+        APK_PATH=$(find . -name "*-debug.apk" -type f | head -1)
         echo "Found APK at: $APK_PATH"
+        mkdir -p ./output
+        cp "$APK_PATH" ./output/sajalstonks.apk
+        ls -la ./output/
         
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
-        name: sajalstonks-release
-        path: CamarillaScreener/android/app/build/outputs/apk/release/*.apk
-        if-no-files-found: warn
-        
-    - name: Upload all APKs (fallback)
-      uses: actions/upload-artifact@v4
-      with:
-        name: sajalstonks-all-apks
-        path: CamarillaScreener/**/*.apk
-        if-no-files-found: warn
+        name: sajalstonks-apk
+        path: CamarillaScreener/output/sajalstonks.apk
+        if-no-files-found: error
