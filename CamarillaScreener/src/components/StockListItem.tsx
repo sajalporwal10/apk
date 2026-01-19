@@ -1,4 +1,4 @@
-// Stock List Item Component - Cyberpunk Theme
+// Stock List Item Component - Premium Elegant Theme
 
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
@@ -11,53 +11,67 @@ interface StockListItemProps {
 }
 
 export const StockListItem: React.FC<StockListItemProps> = ({ stock, onPress }) => {
-    const getRangeColor = (pct: number | null): [string, string] => {
-        if (pct === null) return ['#444', '#333'];
-        if (pct < 2) return ['#00FF87', '#00FFFF'];      // Cyan-green - very tight
-        if (pct < 3) return ['#00FFFF', '#00CCFF'];      // Cyan
-        if (pct < 4) return ['#FFD740', '#FF9100'];      // Amber-orange
-        if (pct < 5) return ['#FF9100', '#FF5252'];      // Orange-red
-        return ['#FF5252', '#FF0055'];                    // Red-magenta - wider range
-    };
+    // Calculate progress bar width (0-6.5% maps to 0-100%)
+    const progressWidth = stock.pctRangeR3
+        ? Math.min((stock.pctRangeR3 / 6.5) * 100, 100)
+        : 0;
 
-    const getBorderColor = (pct: number | null): string => {
-        if (pct === null) return 'rgba(255, 255, 255, 0.1)';
-        if (pct < 3) return 'rgba(0, 255, 255, 0.5)';     // Cyan border for tight
-        if (pct < 5) return 'rgba(255, 0, 255, 0.5)';     // Magenta border for medium
-        return 'rgba(255, 0, 85, 0.5)';                    // Red border for wide
+    const getProgressColors = (pct: number | null): [string, string] => {
+        if (pct === null) return ['#444', '#333'];
+        if (pct < 2) return ['#00FF87', '#00E5FF'];      // Green-Cyan - very tight
+        if (pct < 3) return ['#00E5FF', '#00B8D4'];      // Cyan
+        if (pct < 4) return ['#64FFDA', '#00BFA5'];      // Teal
+        if (pct < 5) return ['#FFD740', '#FF9100'];      // Amber-Orange
+        return ['#FF6D00', '#FF3D00'];                    // Orange-Red - wider range
     };
 
     return (
         <TouchableOpacity
-            style={[styles.container, { borderColor: getBorderColor(stock.pctRangeR3) }]}
+            style={styles.container}
             onPress={() => onPress(stock)}
             activeOpacity={0.7}
         >
-            <View style={styles.leftSection}>
-                <Text style={styles.ticker}>{stock.ticker.replace('.NS', '')}</Text>
-                <Text style={styles.period}>{stock.yearMonth}</Text>
-            </View>
-
-            <View style={styles.middleSection}>
-                <View style={styles.priceRow}>
-                    <Text style={styles.labelR3}>R3</Text>
-                    <Text style={styles.valueR3}>₹{stock.r3?.toLocaleString()}</Text>
+            {/* Top Row: Ticker and Range */}
+            <View style={styles.topRow}>
+                <View style={styles.tickerSection}>
+                    <Text style={styles.ticker}>{stock.ticker.replace('.NS', '')}</Text>
+                    <Text style={styles.companyName} numberOfLines={1}>
+                        {stock.companyName || stock.ticker.replace('.NS', '')}
+                    </Text>
                 </View>
-                <View style={styles.priceRow}>
-                    <Text style={styles.labelS3}>S3</Text>
-                    <Text style={styles.valueS3}>₹{stock.s3?.toLocaleString()}</Text>
+                <View style={styles.rangeSection}>
+                    <Text style={styles.rangeValue}>{stock.pctRangeR3?.toFixed(2)}%</Text>
+                    <Text style={styles.rangeLabel}>Range</Text>
                 </View>
             </View>
 
-            <View style={styles.rightSection}>
-                <LinearGradient
-                    colors={getRangeColor(stock.pctRangeR3)}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.rangeBadge}
-                >
-                    <Text style={styles.rangeText}>{stock.pctRangeR3?.toFixed(2)}%</Text>
-                </LinearGradient>
+            {/* Progress Bar */}
+            <View style={styles.progressContainer}>
+                <View style={styles.progressBackground}>
+                    <LinearGradient
+                        colors={getProgressColors(stock.pctRangeR3)}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={[styles.progressBar, { width: `${progressWidth}%` }]}
+                    />
+                </View>
+            </View>
+
+            {/* Bottom Row: Stats Pills */}
+            <View style={styles.statsRow}>
+                <View style={styles.statPill}>
+                    <Text style={styles.statLabel}>R3</Text>
+                    <Text style={styles.statValue}>₹{stock.r3?.toLocaleString()}</Text>
+                </View>
+                <View style={styles.statPill}>
+                    <Text style={styles.statLabel}>S3</Text>
+                    <Text style={styles.statValue}>₹{stock.s3?.toLocaleString()}</Text>
+                </View>
+                <View style={styles.sectorPill}>
+                    <Text style={styles.sectorText} numberOfLines={1}>
+                        {stock.sector || 'Other'}
+                    </Text>
+                </View>
             </View>
         </TouchableOpacity>
     );
@@ -65,88 +79,104 @@ export const StockListItem: React.FC<StockListItemProps> = ({ stock, onPress }) 
 
 const styles = StyleSheet.create({
     container: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(26, 10, 46, 0.8)',
+        backgroundColor: 'rgba(30, 25, 45, 0.95)',
         marginHorizontal: 16,
         marginVertical: 6,
-        padding: 18,
-        borderRadius: 20,
-        borderWidth: 1.5,
-        shadowColor: '#FF00FF',
+        padding: 16,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(100, 80, 150, 0.3)',
+        // Neumorphic shadow
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
-        shadowRadius: 12,
-        elevation: 8,
+        shadowRadius: 8,
+        elevation: 6,
     },
-    leftSection: {
+    topRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 12,
+    },
+    tickerSection: {
         flex: 1,
     },
     ticker: {
         fontSize: 20,
-        fontWeight: '800',
+        fontWeight: '700',
         color: '#FFFFFF',
-        letterSpacing: 1,
-        textShadowColor: '#00FFFF',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 6,
-    },
-    period: {
-        fontSize: 12,
-        color: '#FF00FF',
-        marginTop: 4,
         letterSpacing: 0.5,
     },
-    middleSection: {
-        flex: 1.2,
-        paddingHorizontal: 12,
-    },
-    priceRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginVertical: 3,
-    },
-    labelR3: {
+    companyName: {
         fontSize: 12,
-        color: '#00FF87',
-        fontWeight: '700',
-        letterSpacing: 1,
+        color: 'rgba(255, 255, 255, 0.5)',
+        marginTop: 2,
+        maxWidth: '80%',
     },
-    labelS3: {
-        fontSize: 12,
-        color: '#FF5252',
-        fontWeight: '700',
-        letterSpacing: 1,
-    },
-    valueR3: {
-        fontSize: 14,
-        color: '#00FFFF',
-        fontWeight: '600',
-    },
-    valueS3: {
-        fontSize: 14,
-        color: '#FF00FF',
-        fontWeight: '600',
-    },
-    rightSection: {
+    rangeSection: {
         alignItems: 'flex-end',
     },
-    rangeBadge: {
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 14,
-        minWidth: 80,
-        alignItems: 'center',
-        shadowColor: '#00FFFF',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.6,
-        shadowRadius: 8,
-        elevation: 6,
-    },
-    rangeText: {
-        fontSize: 15,
+    rangeValue: {
+        fontSize: 22,
         fontWeight: '800',
-        color: '#000',
-        letterSpacing: 0.5,
+        color: '#00E5FF',
+    },
+    rangeLabel: {
+        fontSize: 10,
+        color: 'rgba(255, 255, 255, 0.4)',
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+        marginTop: 2,
+    },
+    progressContainer: {
+        marginBottom: 12,
+    },
+    progressBackground: {
+        height: 6,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 3,
+        overflow: 'hidden',
+    },
+    progressBar: {
+        height: '100%',
+        borderRadius: 3,
+    },
+    statsRow: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    statPill: {
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    statLabel: {
+        fontSize: 11,
+        color: 'rgba(255, 255, 255, 0.5)',
+        fontWeight: '600',
+    },
+    statValue: {
+        fontSize: 13,
+        color: '#FFFFFF',
+        fontWeight: '600',
+    },
+    sectorPill: {
+        backgroundColor: 'rgba(180, 100, 255, 0.2)',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        flex: 1,
+        marginLeft: 'auto',
+    },
+    sectorText: {
+        fontSize: 11,
+        color: '#B388FF',
+        fontWeight: '600',
+        textAlign: 'center',
     },
 });

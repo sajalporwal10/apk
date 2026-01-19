@@ -2,6 +2,8 @@
 
 export interface StockData {
     ticker: string;
+    companyName: string;
+    sector: string;
     yearMonth: string | null;
     periodEnd: string | null;
     open: number | null;
@@ -40,6 +42,21 @@ export interface CachedComments {
 export type RangeFilter = 'under5' | 'between5and6.5';
 
 export type TabType = 'screener' | 'comments';
+
+export type GroupBy = 'none' | 'sector';
+
+export interface SectorGroup {
+    sector: string;
+    stocks: StockData[];
+    count: number;
+    isExpanded: boolean;
+}
+
+export interface SymbolInfo {
+    symbol: string;
+    companyName: string;
+    sector: string;
+}
 
 export interface YahooChartResult {
     timestamp: number[];

@@ -1,4 +1,4 @@
-// Comments List Component - Cyberpunk Theme
+// Comments List Component - Premium Elegant Theme
 
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
@@ -35,17 +35,29 @@ export const CommentsList: React.FC<CommentsListProps> = ({
             activeOpacity={0.7}
         >
             <View style={styles.cardHeader}>
-                <Text style={styles.ticker}>{item.ticker.replace('.NS', '')}</Text>
+                <View>
+                    <Text style={styles.ticker}>{item.ticker.replace('.NS', '')}</Text>
+                    <Text style={styles.companyName} numberOfLines={1}>
+                        {item.companyName || item.ticker.replace('.NS', '')}
+                    </Text>
+                </View>
                 <View style={styles.rangeBadge}>
                     <Text style={styles.rangeText}>{item.pctRangeR3?.toFixed(2)}%</Text>
                 </View>
             </View>
+
             <Text style={styles.commentText} numberOfLines={3}>
                 {item.comment.comment}
             </Text>
-            <Text style={styles.timestamp}>
-                📝 Updated: {formatDate(item.comment.updatedAt)}
-            </Text>
+
+            <View style={styles.cardFooter}>
+                <View style={styles.sectorPill}>
+                    <Text style={styles.sectorText}>{item.sector || 'Other'}</Text>
+                </View>
+                <Text style={styles.timestamp}>
+                    {formatDate(item.comment.updatedAt)}
+                </Text>
+            </View>
         </TouchableOpacity>
     );
 
@@ -55,7 +67,7 @@ export const CommentsList: React.FC<CommentsListProps> = ({
                 <Text style={styles.emptyIcon}>💬</Text>
                 <Text style={styles.emptyTitle}>No Notes Yet</Text>
                 <Text style={styles.emptyText}>
-                    Tap on any stock in the Screener tab and add your notes!
+                    Tap on any stock in the Screener{'\n'}and add your notes!
                 </Text>
             </View>
         );
@@ -78,57 +90,72 @@ const styles = StyleSheet.create({
         paddingBottom: 24,
     },
     commentCard: {
-        backgroundColor: 'rgba(26, 10, 46, 0.9)',
+        backgroundColor: 'rgba(30, 25, 45, 0.95)',
         marginHorizontal: 16,
         marginVertical: 6,
-        padding: 18,
-        borderRadius: 20,
-        borderWidth: 1.5,
-        borderColor: 'rgba(255, 0, 255, 0.4)',
-        shadowColor: '#FF00FF',
+        padding: 16,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(100, 80, 150, 0.3)',
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
-        shadowRadius: 12,
-        elevation: 8,
+        shadowRadius: 8,
+        elevation: 6,
     },
     cardHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         marginBottom: 12,
     },
     ticker: {
-        fontSize: 22,
-        fontWeight: '800',
+        fontSize: 20,
+        fontWeight: '700',
         color: '#FFFFFF',
-        letterSpacing: 1,
-        textShadowColor: '#00FFFF',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 8,
+    },
+    companyName: {
+        fontSize: 12,
+        color: 'rgba(255, 255, 255, 0.5)',
+        marginTop: 2,
+        maxWidth: 200,
     },
     rangeBadge: {
-        backgroundColor: 'rgba(0, 255, 255, 0.2)',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: 'rgba(0, 255, 255, 0.5)',
+        backgroundColor: 'rgba(0, 229, 255, 0.15)',
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 8,
     },
     rangeText: {
         fontSize: 14,
         fontWeight: '700',
-        color: '#00FFFF',
+        color: '#00E5FF',
     },
     commentText: {
-        fontSize: 15,
-        color: '#E0E0E0',
-        lineHeight: 22,
+        fontSize: 14,
+        color: 'rgba(255, 255, 255, 0.7)',
+        lineHeight: 20,
         marginBottom: 12,
     },
+    cardFooter: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    sectorPill: {
+        backgroundColor: 'rgba(179, 136, 255, 0.15)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 6,
+    },
+    sectorText: {
+        fontSize: 11,
+        color: '#B388FF',
+        fontWeight: '600',
+    },
     timestamp: {
-        fontSize: 12,
-        color: '#FF00FF',
-        opacity: 0.8,
+        fontSize: 11,
+        color: 'rgba(255, 255, 255, 0.4)',
     },
     emptyContainer: {
         flex: 1,
@@ -137,23 +164,19 @@ const styles = StyleSheet.create({
         padding: 40,
     },
     emptyIcon: {
-        fontSize: 80,
-        marginBottom: 20,
+        fontSize: 64,
+        marginBottom: 16,
     },
     emptyTitle: {
-        fontSize: 26,
-        fontWeight: '800',
+        fontSize: 22,
+        fontWeight: '700',
         color: '#FFFFFF',
-        marginBottom: 12,
-        textShadowColor: '#FF00FF',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 10,
+        marginBottom: 10,
     },
     emptyText: {
-        fontSize: 15,
-        color: '#00FFFF',
+        fontSize: 14,
+        color: 'rgba(255, 255, 255, 0.5)',
         textAlign: 'center',
-        lineHeight: 24,
-        opacity: 0.8,
+        lineHeight: 22,
     },
 });

@@ -1,6 +1,6 @@
-// Screener - Main Application (Cyberpunk Theme with Tabs)
+// Screener - Main Application (Premium Elegant Theme with Sector Grouping)
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -12,13 +12,13 @@ import {
   RefreshControl,
   Alert,
   ActivityIndicator,
-  AppState,
+  SectionList,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { StockData, RangeFilter, TabType, StockComment } from './src/types';
-import { StockListItem, StockDetailsModal, ScanProgress, CommentsList } from './src/components';
-import { scanAllStocks } from './src/services/api';
+import { StockData, RangeFilter, TabType, StockComment, GroupBy } from './src/types';
+import { StockListItem, StockDetailsModal, ScanProgress, CommentsList, SectorHeader } from './src/components';
+import { scanAllStocks, groupStocksBySector } from './src/services/api';
 import { saveScanResults, loadCachedResults, getCacheTimestamp, getStocksWithComments } from './src/services/storage';
 import { exportToCSV } from './src/services/export';
 import { getLastCompletedMonth } from './src/utils/calculations';
@@ -34,29 +34,17 @@ export default function App() {
   const [lastScanDate, setLastScanDate] = useState<Date | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  // New state for tabs and filters
+  // Tabs, filters, and grouping
   const [activeTab, setActiveTab] = useState<TabType>('screener');
   const [rangeFilter, setRangeFilter] = useState<RangeFilter>('under5');
+  const [groupBy, setGroupBy] = useState<GroupBy>('none');
+  const [expandedSectors, setExpandedSectors] = useState<Set<string>>(new Set());
 
   const cancelRef = useRef(false);
-  const appState = useRef(AppState.currentState);
 
   // Load cached results on app start
   useEffect(() => {
     loadInitialData();
-
-    // Listen for app state changes for background scanning
-    const subscription = AppState.addEventListener('change', nextAppState => {
-      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-        // App has come to foreground - refresh comments
-        refreshComments();
-      }
-      appState.current = nextAppState;
-    });
-
-    return () => {
-      subscription.remove();
-    };
   }, []);
 
   // Refresh comments when stocks change
@@ -90,7 +78,6 @@ export default function App() {
 
   const handleStartScan = useCallback(async () => {
     if (isScanning) {
-      // Cancel the scan
       cancelRef.current = true;
       return;
     }
@@ -113,7 +100,7 @@ export default function App() {
         setLastScanDate(new Date());
 
         Alert.alert(
-          'Scan Complete',
+          'Scan Complete ✨',
           `Found ${results.length} stocks with narrow range (< 6.5%)`,
           [{ text: 'OK' }]
         );
@@ -156,36 +143,63 @@ export default function App() {
     refreshComments();
   };
 
+  const toggleSector = (sector: string) => {
+    setExpandedSectors(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(sector)) {
+        newSet.delete(sector);
+      } else {
+        newSet.add(sector);
+      }
+      return newSet;
+    });
+  };
+
   const formatDate = (date: Date | null): string => {
     if (!date) return 'Never';
     return date.toLocaleDateString('en-IN', {
       day: '2-digit',
       month: 'short',
-      year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
     });
   };
 
   // Filter stocks based on range filter
-  const getFilteredStocks = (): StockData[] => {
+  const filteredStocks = useMemo(() => {
     if (rangeFilter === 'under5') {
       return stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 < 5);
     } else {
       return stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 >= 5 && s.pctRangeR3 <= 6.5);
     }
-  };
+  }, [stocks, rangeFilter]);
 
-  const filteredStocks = getFilteredStocks();
+  // Group stocks by sector for section list
+  const sectionData = useMemo(() => {
+    if (groupBy === 'none') return [];
+
+    const groups = groupStocksBySector(filteredStocks);
+    return Object.keys(groups)
+      .sort()
+      .map(sector => ({
+        title: sector,
+        data: groups[sector],
+        count: groups[sector].length,
+        isExpanded: expandedSectors.has(sector)
+      }));
+  }, [filteredStocks, groupBy, expandedSectors]);
+
   const { label: refMonth } = getLastCompletedMonth();
+  const under5Count = stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 < 5).length;
+  const between5and6Count = stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 >= 5 && s.pctRangeR3 <= 6.5).length;
 
   return (
     <LinearGradient
-      colors={['#1a0a2e', '#12142a', '#0d1b2a']}
+      colors={['#1a1625', '#13111a', '#0d0b12']}
       style={styles.gradientContainer}
     >
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#1a0a2e" />
+        <StatusBar barStyle="light-content" backgroundColor="#1a1625" />
 
         {/* Header */}
         <View style={styles.header}>
@@ -200,7 +214,7 @@ export default function App() {
               disabled={isExporting || stocks.length === 0}
             >
               {isExporting ? (
-                <ActivityIndicator size="small" color="#1a0a2e" />
+                <ActivityIndicator size="small" color="#1a1625" />
               ) : (
                 <Text style={styles.exportButtonText}>📤</Text>
               )}
@@ -231,59 +245,47 @@ export default function App() {
         {/* Screener Tab Content */}
         {activeTab === 'screener' && (
           <>
-            {/* Range Filter Tabs */}
-            <View style={styles.filterContainer}>
+            {/* Range Filter Chips */}
+            <View style={styles.filterRow}>
               <TouchableOpacity
-                style={[styles.filterTab, rangeFilter === 'under5' && styles.activeFilterTab]}
+                style={[styles.filterChip, rangeFilter === 'under5' && styles.activeFilterChip]}
                 onPress={() => setRangeFilter('under5')}
               >
-                <LinearGradient
-                  colors={rangeFilter === 'under5' ? ['#00FFFF', '#00CCFF'] : ['transparent', 'transparent']}
-                  style={styles.filterGradient}
-                >
-                  <Text style={[styles.filterText, rangeFilter === 'under5' && styles.activeFilterText]}>
-                    🔥 Under 5%
-                  </Text>
-                  <Text style={[styles.filterCount, rangeFilter === 'under5' && styles.activeFilterCount]}>
-                    {stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 < 5).length}
-                  </Text>
-                </LinearGradient>
+                <Text style={[styles.filterChipText, rangeFilter === 'under5' && styles.activeFilterChipText]}>
+                  🔥 Under 5% ({under5Count})
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.filterTab, rangeFilter === 'between5and6.5' && styles.activeFilterTab]}
+                style={[styles.filterChip, rangeFilter === 'between5and6.5' && styles.activeFilterChip]}
                 onPress={() => setRangeFilter('between5and6.5')}
               >
-                <LinearGradient
-                  colors={rangeFilter === 'between5and6.5' ? ['#FF00FF', '#CC00FF'] : ['transparent', 'transparent']}
-                  style={styles.filterGradient}
-                >
-                  <Text style={[styles.filterText, rangeFilter === 'between5and6.5' && styles.activeFilterText]}>
-                    📊 5% - 6.5%
-                  </Text>
-                  <Text style={[styles.filterCount, rangeFilter === 'between5and6.5' && styles.activeFilterCount]}>
-                    {stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 >= 5 && s.pctRangeR3 <= 6.5).length}
-                  </Text>
-                </LinearGradient>
+                <Text style={[styles.filterChipText, rangeFilter === 'between5and6.5' && styles.activeFilterChipText]}>
+                  📊 5-6.5% ({between5and6Count})
+                </Text>
               </TouchableOpacity>
             </View>
 
-            {/* Stats Bar */}
-            <View style={styles.statsBar}>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{filteredStocks.length}</Text>
-                <Text style={styles.statLabel}>Filtered</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{stocks.length}</Text>
-                <Text style={styles.statLabel}>Total</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{formatDate(lastScanDate).split(',')[0]}</Text>
-                <Text style={styles.statLabel}>Last Scan</Text>
-              </View>
+            {/* Group By Toggle */}
+            <View style={styles.groupToggleRow}>
+              <Text style={styles.groupLabel}>Group by:</Text>
+              <TouchableOpacity
+                style={[styles.groupChip, groupBy === 'none' && styles.activeGroupChip]}
+                onPress={() => setGroupBy('none')}
+              >
+                <Text style={[styles.groupChipText, groupBy === 'none' && styles.activeGroupChipText]}>All</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.groupChip, groupBy === 'sector' && styles.activeGroupChip]}
+                onPress={() => {
+                  setGroupBy('sector');
+                  // Expand all sectors by default
+                  const allSectors = Object.keys(groupStocksBySector(filteredStocks));
+                  setExpandedSectors(new Set(allSectors));
+                }}
+              >
+                <Text style={[styles.groupChipText, groupBy === 'sector' && styles.activeGroupChipText]}>Sector</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Scan Button */}
@@ -293,13 +295,13 @@ export default function App() {
               activeOpacity={0.8}
             >
               <LinearGradient
-                colors={isScanning ? ['#FF0055', '#FF00FF'] : ['#00FFFF', '#FF00FF']}
+                colors={isScanning ? ['#FF6B6B', '#EE5A5A'] : ['#00E5FF', '#B388FF']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.scanButton}
               >
                 <Text style={styles.scanButtonText}>
-                  {isScanning ? '⏹ Stop Scan' : '🔍 Start Scan'}
+                  {isScanning ? '⏹ Stop Scan' : '⚡ Start Fast Scan'}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -316,7 +318,7 @@ export default function App() {
             {/* Loading State */}
             {isLoading && !isScanning && (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#00FFFF" />
+                <ActivityIndicator size="large" color="#00E5FF" />
                 <Text style={styles.loadingText}>Loading cached results...</Text>
               </View>
             )}
@@ -327,13 +329,13 @@ export default function App() {
                 <Text style={styles.emptyIcon}>📊</Text>
                 <Text style={styles.emptyTitle}>No Results Yet</Text>
                 <Text style={styles.emptyText}>
-                  Tap "Start Scan" to fetch NIFTY 500 stocks and calculate Camarilla levels
+                  Tap "Start Fast Scan" to fetch NIFTY 500 stocks{'\n'}with parallel processing
                 </Text>
               </View>
             )}
 
-            {/* Stock List */}
-            {!isLoading && !isScanning && filteredStocks.length > 0 && (
+            {/* Stock List - Flat or Sectioned */}
+            {!isLoading && !isScanning && filteredStocks.length > 0 && groupBy === 'none' && (
               <FlatList
                 data={filteredStocks}
                 keyExtractor={(item) => item.ticker}
@@ -346,7 +348,38 @@ export default function App() {
                   <RefreshControl
                     refreshing={false}
                     onRefresh={handleStartScan}
-                    tintColor="#00FFFF"
+                    tintColor="#00E5FF"
+                  />
+                }
+              />
+            )}
+
+            {/* Stock List - Grouped by Sector */}
+            {!isLoading && !isScanning && filteredStocks.length > 0 && groupBy === 'sector' && (
+              <SectionList
+                sections={sectionData}
+                keyExtractor={(item) => item.ticker}
+                renderSectionHeader={({ section }) => (
+                  <SectorHeader
+                    sector={section.title}
+                    count={section.count}
+                    isExpanded={expandedSectors.has(section.title)}
+                    onToggle={() => toggleSector(section.title)}
+                  />
+                )}
+                renderItem={({ item, section }) =>
+                  expandedSectors.has(section.title) ? (
+                    <StockListItem stock={item} onPress={handleStockPress} />
+                  ) : null
+                }
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
+                stickySectionHeadersEnabled={false}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={false}
+                    onRefresh={handleStartScan}
+                    tintColor="#00E5FF"
                   />
                 }
               />
@@ -404,41 +437,35 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   title: {
-    fontSize: 32,
-    fontWeight: '800',
+    fontSize: 28,
+    fontWeight: '700',
     color: '#FFFFFF',
-    letterSpacing: 2,
-    textShadowColor: '#00FFFF',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
+    letterSpacing: 0.5,
   },
   subtitle: {
     fontSize: 13,
-    color: '#FF00FF',
+    color: 'rgba(255, 255, 255, 0.5)',
     marginTop: 2,
-    letterSpacing: 1,
   },
   headerButtons: {
     flexDirection: 'row',
     gap: 12,
   },
   exportButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: '#00FFFF',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#00E5FF',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FF00FF',
-    shadowColor: '#00FFFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
   },
   exportButtonText: {
-    fontSize: 20,
+    fontSize: 18,
   },
   buttonDisabled: {
     opacity: 0.5,
@@ -448,131 +475,108 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginHorizontal: 16,
     marginTop: 8,
-    marginBottom: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 16,
+    marginBottom: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
     padding: 4,
   },
   tab: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: 10,
   },
   activeTab: {
-    backgroundColor: 'rgba(0, 255, 255, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 255, 255, 0.5)',
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
   },
   tabText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: 'rgba(255, 255, 255, 0.5)',
   },
   activeTabText: {
-    color: '#00FFFF',
-    fontWeight: '700',
+    color: '#00E5FF',
   },
-  // Filter Tabs
-  filterContainer: {
+  // Filter Chips
+  filterRow: {
     flexDirection: 'row',
     marginHorizontal: 16,
-    marginBottom: 12,
+    marginBottom: 8,
     gap: 10,
   },
-  filterTab: {
+  filterChip: {
     flex: 1,
-    borderRadius: 14,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  activeFilterTab: {
-    borderWidth: 0,
-  },
-  filterGradient: {
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  filterText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.6)',
-  },
-  activeFilterText: {
-    color: '#000',
-    fontWeight: '700',
-  },
-  filterCount: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: 'rgba(255, 255, 255, 0.6)',
-  },
-  activeFilterCount: {
-    color: '#000',
-  },
-  statsBar: {
-    flexDirection: 'row',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  activeFilterChip: {
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    borderColor: 'rgba(0, 229, 255, 0.4)',
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  activeFilterChipText: {
+    color: '#00E5FF',
+  },
+  // Group Toggle
+  groupToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginHorizontal: 16,
     marginBottom: 10,
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 255, 255, 0.2)',
+    gap: 8,
   },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
+  groupLabel: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.5)',
+    marginRight: 4,
   },
-  statValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#00FFFF',
-    textShadowColor: '#00FFFF',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 6,
+  groupChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
-  statLabel: {
-    fontSize: 10,
-    color: '#FF00FF',
-    marginTop: 3,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+  activeGroupChip: {
+    backgroundColor: 'rgba(179, 136, 255, 0.2)',
   },
-  statDivider: {
-    width: 1,
-    backgroundColor: 'rgba(255, 0, 255, 0.3)',
-    marginVertical: 2,
+  groupChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.5)',
   },
+  activeGroupChipText: {
+    color: '#B388FF',
+  },
+  // Scan Button
   scanButtonContainer: {
     marginHorizontal: 16,
     marginVertical: 6,
-    borderRadius: 18,
+    borderRadius: 14,
     overflow: 'hidden',
-    shadowColor: '#FF00FF',
+    shadowColor: '#00E5FF',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.6,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
   scanButton: {
-    paddingVertical: 16,
+    paddingVertical: 14,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   scanButtonText: {
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#FFFFFF',
-    letterSpacing: 1,
-    textShadowColor: '#000',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    letterSpacing: 0.5,
   },
   loadingContainer: {
     flex: 1,
@@ -581,10 +585,9 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   loadingText: {
-    color: '#00FFFF',
-    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 15,
     marginTop: 16,
-    letterSpacing: 1,
   },
   emptyContainer: {
     flex: 1,
@@ -593,24 +596,20 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   emptyIcon: {
-    fontSize: 70,
+    fontSize: 64,
     marginBottom: 16,
   },
   emptyTitle: {
-    fontSize: 24,
-    fontWeight: '800',
+    fontSize: 22,
+    fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 10,
-    textShadowColor: '#FF00FF',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
   },
   emptyText: {
     fontSize: 14,
-    color: '#00FFFF',
+    color: 'rgba(255, 255, 255, 0.5)',
     textAlign: 'center',
     lineHeight: 22,
-    opacity: 0.8,
   },
   listContent: {
     paddingVertical: 4,

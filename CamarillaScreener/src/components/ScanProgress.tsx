@@ -1,4 +1,4 @@
-// Progress indicator component for scanning - Cyberpunk Theme
+// Progress indicator component for scanning - Premium Elegant Theme
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
@@ -16,119 +16,128 @@ export const ScanProgress: React.FC<ScanProgressProps> = ({
     currentTicker
 }) => {
     const progress = total > 0 ? (current / total) * 100 : 0;
+    const estimatedTimeLeft = total > 0
+        ? Math.ceil(((total - current) / 8) * 0.8 / 60) // 8 stocks per batch, ~0.8s per batch
+        : 0;
 
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.title}>Scanning NIFTY 500</Text>
-                <Text style={styles.counter}>{current} / {total}</Text>
+                <View>
+                    <Text style={styles.title}>Scanning Stocks</Text>
+                    <Text style={styles.subtitle}>Processing in parallel batches</Text>
+                </View>
+                <View style={styles.counterBadge}>
+                    <Text style={styles.counter}>{current}/{total}</Text>
+                </View>
             </View>
 
             <View style={styles.progressBarContainer}>
                 <LinearGradient
-                    colors={['#00FFFF', '#FF00FF']}
+                    colors={['#00E5FF', '#B388FF']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={[styles.progressBar, { width: `${progress}%` }]}
                 />
             </View>
 
-            <Text style={styles.currentTicker}>
-                Analyzing: <Text style={styles.tickerName}>{currentTicker.replace('.NS', '')}</Text>
-            </Text>
-
-            <View style={styles.pulseContainer}>
-                <View style={styles.pulse} />
-                <Text style={styles.hint}>
-                    ⏱ This may take 3-5 minutes for all 500 stocks
-                </Text>
+            <View style={styles.infoRow}>
+                <View style={styles.infoPill}>
+                    <Text style={styles.infoLabel}>Current Batch</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>{currentTicker}</Text>
+                </View>
+                <View style={styles.infoPill}>
+                    <Text style={styles.infoLabel}>Est. Time</Text>
+                    <Text style={styles.infoValue}>~{estimatedTimeLeft} min</Text>
+                </View>
             </View>
+
+            <Text style={styles.hint}>
+                ⚡ Processing 8 stocks simultaneously for faster scanning
+            </Text>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
-        backgroundColor: 'rgba(26, 10, 46, 0.9)',
+        backgroundColor: 'rgba(30, 25, 45, 0.95)',
         margin: 16,
-        padding: 26,
-        borderRadius: 24,
-        borderWidth: 1.5,
-        borderColor: 'rgba(0, 255, 255, 0.4)',
-        shadowColor: '#FF00FF',
+        padding: 20,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(100, 80, 150, 0.3)',
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 16,
-        elevation: 10,
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+        elevation: 8,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 18,
+        alignItems: 'flex-start',
+        marginBottom: 16,
     },
     title: {
-        fontSize: 20,
-        fontWeight: '800',
-        color: '#FFFFFF',
-        letterSpacing: 1,
-        textShadowColor: '#FF00FF',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 8,
-    },
-    counter: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#00FFFF',
-        letterSpacing: 1,
-        textShadowColor: '#00FFFF',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 8,
+        color: '#FFFFFF',
+    },
+    subtitle: {
+        fontSize: 12,
+        color: 'rgba(255, 255, 255, 0.5)',
+        marginTop: 2,
+    },
+    counterBadge: {
+        backgroundColor: 'rgba(0, 229, 255, 0.2)',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 12,
+    },
+    counter: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#00E5FF',
     },
     progressBarContainer: {
-        height: 12,
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        borderRadius: 6,
+        height: 8,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 4,
         overflow: 'hidden',
-        marginBottom: 18,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 0, 255, 0.3)',
+        marginBottom: 16,
     },
     progressBar: {
         height: '100%',
-        borderRadius: 6,
-    },
-    currentTicker: {
-        fontSize: 15,
-        color: 'rgba(255, 255, 255, 0.6)',
-        marginBottom: 14,
-    },
-    tickerName: {
-        color: '#00FFFF',
-        fontWeight: '700',
-        letterSpacing: 1,
-    },
-    pulseContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginTop: 8,
-    },
-    pulse: {
-        width: 8,
-        height: 8,
         borderRadius: 4,
-        backgroundColor: '#FF00FF',
-        marginRight: 10,
-        shadowColor: '#FF00FF',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 1,
-        shadowRadius: 6,
-        elevation: 4,
+    },
+    infoRow: {
+        flexDirection: 'row',
+        gap: 10,
+        marginBottom: 12,
+    },
+    infoPill: {
+        flex: 1,
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 10,
+    },
+    infoLabel: {
+        fontSize: 10,
+        color: 'rgba(255, 255, 255, 0.5)',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginBottom: 4,
+    },
+    infoValue: {
+        fontSize: 13,
+        color: '#FFFFFF',
+        fontWeight: '600',
     },
     hint: {
         fontSize: 12,
-        color: 'rgba(255, 0, 255, 0.8)',
-        letterSpacing: 0.5,
+        color: '#B388FF',
+        textAlign: 'center',
     },
 });

@@ -1,4 +1,4 @@
-// Stock Details Modal Component - Cyberpunk Theme with Comments
+// Stock Details Modal Component - Premium Elegant Theme
 
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
@@ -43,10 +43,10 @@ export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
         setIsSaving(true);
         try {
             await saveComment(stock.ticker, comment);
-            Alert.alert('Saved!', 'Your comment has been saved.');
+            Alert.alert('Saved!', 'Your note has been saved.');
             onCommentSaved?.();
         } catch (error) {
-            Alert.alert('Error', 'Could not save comment.');
+            Alert.alert('Error', 'Could not save note.');
         } finally {
             setIsSaving(false);
         }
@@ -54,10 +54,15 @@ export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
 
     if (!stock) return null;
 
-    const DataRow = ({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) => (
+    // Calculate range progress (0-6.5% maps to 0-100%)
+    const rangeProgress = stock.pctRangeR3
+        ? Math.min((stock.pctRangeR3 / 6.5) * 100, 100)
+        : 0;
+
+    const DataRow = ({ label, value }: { label: string; value: string }) => (
         <View style={styles.dataRow}>
             <Text style={styles.dataLabel}>{label}</Text>
-            <Text style={[styles.dataValue, highlight && styles.highlightValue]}>{value}</Text>
+            <Text style={styles.dataValue}>{value}</Text>
         </View>
     );
 
@@ -72,55 +77,72 @@ export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.overlay}
             >
-                <LinearGradient
-                    colors={['#1a0a2e', '#12142a', '#0d1b2a']}
-                    style={styles.modalContainer}
-                >
+                <View style={styles.modalContainer}>
                     {/* Header */}
-                    <View style={styles.header}>
-                        <View>
-                            <Text style={styles.ticker}>{stock.ticker.replace('.NS', '')}</Text>
-                            <Text style={styles.subtitle}>NSE • {stock.yearMonth}</Text>
-                        </View>
-                        <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                            <LinearGradient
-                                colors={['#FF00FF', '#00FFFF']}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={styles.closeButtonGradient}
-                            >
+                    <LinearGradient
+                        colors={['#1a1625', '#13111a']}
+                        style={styles.header}
+                    >
+                        <View style={styles.headerContent}>
+                            <View>
+                                <Text style={styles.ticker}>{stock.ticker.replace('.NS', '')}</Text>
+                                <Text style={styles.companyName} numberOfLines={1}>
+                                    {stock.companyName || stock.ticker.replace('.NS', '')}
+                                </Text>
+                            </View>
+                            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
                                 <Text style={styles.closeText}>✕</Text>
-                            </LinearGradient>
-                        </TouchableOpacity>
-                    </View>
+                            </TouchableOpacity>
+                        </View>
+                        <View style={styles.sectorBadge}>
+                            <Text style={styles.sectorText}>{stock.sector || 'Other'}</Text>
+                        </View>
+                    </LinearGradient>
 
                     <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                        {/* Range Analysis - Made prominent */}
-                        <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>🎯 Range Analysis</Text>
-                            <LinearGradient
-                                colors={['rgba(0, 255, 255, 0.15)', 'rgba(255, 0, 255, 0.15)']}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={styles.rangeCard}
-                            >
-                                <Text style={styles.rangeLabel}>R3-S3 Range</Text>
+                        {/* Range Analysis Card */}
+                        <View style={styles.rangeCard}>
+                            <View style={styles.rangeHeader}>
+                                <Text style={styles.rangeTitle}>R3-S3 Range</Text>
                                 <Text style={styles.rangeValue}>{stock.pctRangeR3?.toFixed(2)}%</Text>
-                                <Text style={styles.rangeDescription}>
-                                    {stock.pctRangeR3 && stock.pctRangeR3 < 2.5
-                                        ? '🔥 Very tight consolidation - High breakout potential'
-                                        : stock.pctRangeR3 && stock.pctRangeR3 < 4
-                                            ? '📊 Moderate consolidation - Watch for breakout'
-                                            : stock.pctRangeR3 && stock.pctRangeR3 < 5
-                                                ? '📈 Good range - Potential opportunity'
-                                                : '📉 Wider range - Less predictable'}
-                                </Text>
-                            </LinearGradient>
+                            </View>
+                            <View style={styles.progressBackground}>
+                                <LinearGradient
+                                    colors={['#00E5FF', '#B388FF']}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 0 }}
+                                    style={[styles.progressBar, { width: `${rangeProgress}%` }]}
+                                />
+                            </View>
+                            <Text style={styles.rangeDescription}>
+                                {stock.pctRangeR3 && stock.pctRangeR3 < 2.5
+                                    ? '🔥 Very tight - High breakout potential'
+                                    : stock.pctRangeR3 && stock.pctRangeR3 < 4
+                                        ? '📊 Moderate - Watch for breakout'
+                                        : stock.pctRangeR3 && stock.pctRangeR3 < 5
+                                            ? '📈 Good range - Potential opportunity'
+                                            : '📉 Wider range'}
+                            </Text>
                         </View>
 
-                        {/* OHLC Section */}
+                        {/* Price Levels */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>📊 Monthly OHLC</Text>
+                            <Text style={styles.sectionTitle}>Camarilla Levels</Text>
+                            <View style={styles.levelsRow}>
+                                <View style={styles.levelCard}>
+                                    <Text style={styles.levelLabel}>R3</Text>
+                                    <Text style={styles.levelValue}>₹{stock.r3?.toLocaleString()}</Text>
+                                </View>
+                                <View style={styles.levelCard}>
+                                    <Text style={styles.levelLabel}>S3</Text>
+                                    <Text style={styles.levelValue}>₹{stock.s3?.toLocaleString()}</Text>
+                                </View>
+                            </View>
+                        </View>
+
+                        {/* OHLC Data */}
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Monthly OHLC • {stock.yearMonth}</Text>
                             <View style={styles.card}>
                                 <DataRow label="Open" value={`₹${stock.open?.toLocaleString()}`} />
                                 <DataRow label="High" value={`₹${stock.high?.toLocaleString()}`} />
@@ -129,23 +151,14 @@ export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
                             </View>
                         </View>
 
-                        {/* Camarilla Levels */}
+                        {/* Notes Section */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>📈 Camarilla Levels</Text>
-                            <View style={styles.card}>
-                                <DataRow label="Resistance 3 (R3)" value={`₹${stock.r3?.toLocaleString()}`} highlight />
-                                <DataRow label="Support 3 (S3)" value={`₹${stock.s3?.toLocaleString()}`} highlight />
-                            </View>
-                        </View>
-
-                        {/* Comments Section */}
-                        <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>💬 Your Notes</Text>
-                            <View style={styles.commentCard}>
+                            <Text style={styles.sectionTitle}>Your Notes</Text>
+                            <View style={styles.notesCard}>
                                 <TextInput
-                                    style={styles.commentInput}
+                                    style={styles.notesInput}
                                     placeholder="Add your notes about this stock..."
-                                    placeholderTextColor="rgba(255,255,255,0.4)"
+                                    placeholderTextColor="rgba(255,255,255,0.3)"
                                     value={comment}
                                     onChangeText={setComment}
                                     multiline
@@ -158,7 +171,7 @@ export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
                                     disabled={isSaving}
                                 >
                                     <LinearGradient
-                                        colors={['#00FFFF', '#FF00FF']}
+                                        colors={['#00E5FF', '#B388FF']}
                                         start={{ x: 0, y: 0 }}
                                         end={{ x: 1, y: 0 }}
                                         style={styles.saveButtonGradient}
@@ -170,17 +183,8 @@ export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
                                 </TouchableOpacity>
                             </View>
                         </View>
-
-                        {/* Formula Reference */}
-                        <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>🧮 Formula Reference</Text>
-                            <View style={styles.formulaCard}>
-                                <Text style={styles.formulaText}>R3 = Close + (High - Low) × 1.1 / 4</Text>
-                                <Text style={styles.formulaText}>S3 = Close - (High - Low) × 1.1 / 4</Text>
-                            </View>
-                        </View>
                     </ScrollView>
-                </LinearGradient>
+                </View>
             </KeyboardAvoidingView>
         </Modal>
     );
@@ -189,180 +193,185 @@ export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
         justifyContent: 'flex-end',
     },
     modalContainer: {
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
+        backgroundColor: '#0d0b12',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
         maxHeight: '92%',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 0, 255, 0.4)',
-        borderBottomWidth: 0,
     },
     header: {
+        padding: 20,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+    },
+    headerContent: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 24,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(0, 255, 255, 0.2)',
+        alignItems: 'flex-start',
     },
     ticker: {
-        fontSize: 32,
-        fontWeight: '800',
+        fontSize: 28,
+        fontWeight: '700',
         color: '#FFFFFF',
-        letterSpacing: 2,
-        textShadowColor: '#00FFFF',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 12,
     },
-    subtitle: {
-        fontSize: 14,
-        color: '#FF00FF',
-        marginTop: 4,
-        letterSpacing: 1,
+    companyName: {
+        fontSize: 13,
+        color: 'rgba(255, 255, 255, 0.5)',
+        marginTop: 2,
+        maxWidth: 250,
     },
     closeButton: {
-        borderRadius: 22,
-        overflow: 'hidden',
-        shadowColor: '#FF00FF',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.8,
-        shadowRadius: 10,
-        elevation: 8,
-    },
-    closeButtonGradient: {
-        width: 44,
-        height: 44,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
         alignItems: 'center',
         justifyContent: 'center',
     },
     closeText: {
-        fontSize: 18,
-        color: '#FFFFFF',
-        fontWeight: '800',
+        fontSize: 16,
+        color: 'rgba(255, 255, 255, 0.6)',
+    },
+    sectorBadge: {
+        alignSelf: 'flex-start',
+        backgroundColor: 'rgba(179, 136, 255, 0.2)',
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 8,
+        marginTop: 12,
+    },
+    sectorText: {
+        fontSize: 12,
+        color: '#B388FF',
+        fontWeight: '600',
     },
     content: {
         padding: 20,
     },
+    rangeCard: {
+        backgroundColor: 'rgba(30, 25, 45, 0.8)',
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(0, 229, 255, 0.2)',
+    },
+    rangeHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    rangeTitle: {
+        fontSize: 14,
+        color: 'rgba(255, 255, 255, 0.6)',
+    },
+    rangeValue: {
+        fontSize: 32,
+        fontWeight: '700',
+        color: '#00E5FF',
+    },
+    progressBackground: {
+        height: 8,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 4,
+        overflow: 'hidden',
+        marginBottom: 12,
+    },
+    progressBar: {
+        height: '100%',
+        borderRadius: 4,
+    },
+    rangeDescription: {
+        fontSize: 13,
+        color: 'rgba(255, 255, 255, 0.6)',
+        textAlign: 'center',
+    },
     section: {
-        marginBottom: 24,
+        marginBottom: 20,
     },
     sectionTitle: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#00FFFF',
+        fontSize: 13,
+        fontWeight: '600',
+        color: 'rgba(255, 255, 255, 0.5)',
         textTransform: 'uppercase',
-        letterSpacing: 2,
-        marginBottom: 14,
+        letterSpacing: 1,
+        marginBottom: 12,
+    },
+    levelsRow: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    levelCard: {
+        flex: 1,
+        backgroundColor: 'rgba(30, 25, 45, 0.8)',
+        borderRadius: 12,
+        padding: 16,
+        alignItems: 'center',
+    },
+    levelLabel: {
+        fontSize: 12,
+        color: 'rgba(255, 255, 255, 0.5)',
+        marginBottom: 4,
+    },
+    levelValue: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#00E5FF',
     },
     card: {
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: 20,
-        padding: 18,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 0, 255, 0.3)',
+        backgroundColor: 'rgba(30, 25, 45, 0.8)',
+        borderRadius: 12,
+        padding: 16,
     },
     dataRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: 12,
+        paddingVertical: 10,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(0, 255, 255, 0.1)',
+        borderBottomColor: 'rgba(255, 255, 255, 0.05)',
     },
     dataLabel: {
-        fontSize: 15,
-        color: 'rgba(255, 255, 255, 0.6)',
+        fontSize: 14,
+        color: 'rgba(255, 255, 255, 0.5)',
     },
     dataValue: {
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '600',
-        color: '#E0E0E0',
+        color: '#FFFFFF',
     },
-    highlightValue: {
-        color: '#00FFFF',
-        fontWeight: '700',
-        textShadowColor: '#00FFFF',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 6,
-    },
-    rangeCard: {
-        borderRadius: 24,
-        padding: 28,
-        alignItems: 'center',
-        borderWidth: 2,
-        borderColor: 'rgba(0, 255, 255, 0.4)',
-    },
-    rangeLabel: {
-        fontSize: 14,
-        color: '#FF00FF',
-        marginBottom: 8,
-        letterSpacing: 1,
-    },
-    rangeValue: {
-        fontSize: 56,
-        fontWeight: '800',
-        color: '#00FFFF',
-        textShadowColor: '#00FFFF',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 20,
-    },
-    rangeDescription: {
-        fontSize: 14,
-        color: '#E0E0E0',
-        marginTop: 16,
-        textAlign: 'center',
-        lineHeight: 22,
-    },
-    commentCard: {
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        borderRadius: 20,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: 'rgba(0, 255, 255, 0.3)',
-    },
-    commentInput: {
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    notesCard: {
+        backgroundColor: 'rgba(30, 25, 45, 0.8)',
         borderRadius: 12,
         padding: 16,
+    },
+    notesInput: {
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: 10,
+        padding: 14,
         color: '#FFFFFF',
-        fontSize: 15,
+        fontSize: 14,
         minHeight: 100,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 0, 255, 0.3)',
         marginBottom: 12,
     },
     saveButton: {
-        borderRadius: 12,
+        borderRadius: 10,
         overflow: 'hidden',
     },
     saveButtonDisabled: {
         opacity: 0.5,
     },
     saveButtonGradient: {
-        paddingVertical: 14,
+        paddingVertical: 12,
         alignItems: 'center',
     },
     saveButtonText: {
         color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '700',
-        letterSpacing: 1,
-    },
-    formulaCard: {
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        borderRadius: 20,
-        padding: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(0, 255, 255, 0.3)',
-    },
-    formulaText: {
-        fontSize: 14,
-        fontFamily: 'monospace',
-        color: '#FF00FF',
-        paddingVertical: 6,
-        letterSpacing: 0.5,
+        fontSize: 15,
+        fontWeight: '600',
     },
 });

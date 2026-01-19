@@ -3,3 +3,4 @@ export { StockListItem } from './StockListItem';
 export { StockDetailsModal } from './StockDetailsModal';
 export { ScanProgress } from './ScanProgress';
 export { CommentsList } from './CommentsList';
+export { SectorHeader } from './SectorHeader';
