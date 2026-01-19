@@ -43,6 +43,7 @@ async function fetchWithTimeout(url: string, timeout: number): Promise<Response>
 
 /**
  * Fetch NIFTY 500 symbols with company names and sectors from NSE website
+ * CSV Format: Company Name,Industry,Symbol,Series,ISIN Code
  */
 export async function fetchNifty500Symbols(): Promise<SymbolInfo[]> {
     try {
@@ -63,26 +64,36 @@ export async function fetchNifty500Symbols(): Promise<SymbolInfo[]> {
             throw new Error('Invalid CSV format');
         }
 
-        // Parse headers
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        // Parse headers to find column indices
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
 
-        // Find column indices
-        let symbolIndex = headers.findIndex(h => h.includes('symbol') || h.includes('ticker'));
-        let companyIndex = headers.findIndex(h => h.includes('company') || h.includes('name'));
-        let sectorIndex = headers.findIndex(h => h.includes('industry') || h.includes('sector'));
+        // Find exact column indices based on header names
+        // Expected: "company name", "industry", "symbol"
+        let companyIndex = headers.findIndex(h => h.includes('company'));
+        let sectorIndex = headers.findIndex(h => h.includes('industry'));
+        let symbolIndex = headers.findIndex(h => h.includes('symbol'));
 
-        if (symbolIndex === -1) symbolIndex = 0;
-        if (companyIndex === -1) companyIndex = 1;
-        if (sectorIndex === -1) sectorIndex = 2;
+        // Fallback to known positions if headers not found
+        // CSV structure: Company Name(0), Industry(1), Symbol(2), Series(3), ISIN(4)
+        if (companyIndex === -1) companyIndex = 0;
+        if (sectorIndex === -1) sectorIndex = 1;
+        if (symbolIndex === -1) symbolIndex = 2;
+
+        console.log(`CSV Columns - Company: ${companyIndex}, Sector: ${sectorIndex}, Symbol: ${symbolIndex}`);
 
         const symbolInfos: SymbolInfo[] = [];
         const seen = new Set<string>();
 
         for (let i = 1; i < lines.length; i++) {
-            const cols = lines[i].split(',').map(c => c.trim().replace(/"/g, ''));
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            const cols = line.split(',').map(c => c.trim().replace(/"/g, ''));
+
+            // Need at least enough columns for symbol
             if (cols.length <= symbolIndex) continue;
 
-            let symbol = cols[symbolIndex].toUpperCase();
+            let symbol = cols[symbolIndex]?.toUpperCase();
             if (!symbol || symbol === 'NAN' || symbol === '') continue;
 
             // Add .NS suffix if not present
@@ -90,14 +101,19 @@ export async function fetchNifty500Symbols(): Promise<SymbolInfo[]> {
                 symbol = symbol + '.NS';
             }
 
+            // Get company name and sector with proper bounds checking
+            const companyName = companyIndex < cols.length ? cols[companyIndex] : symbol.replace('.NS', '');
+            const sector = sectorIndex < cols.length && cols[sectorIndex] ? cols[sectorIndex] : 'Other';
+
             if (!seen.has(symbol)) {
                 seen.add(symbol);
                 symbolInfos.push({
                     symbol,
-                    companyName: cols[companyIndex] || symbol.replace('.NS', ''),
-                    sector: cols[sectorIndex] || 'Other'
+                    companyName: companyName || symbol.replace('.NS', ''),
+                    sector: sector || 'Other'
                 });
             }
+
         }
 
         return symbolInfos;
