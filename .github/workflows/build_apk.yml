@@ -34,22 +34,26 @@ jobs:
       run: npm ci
       
     - name: Install Expo CLI
-      run: npm install -g expo-cli eas-cli
+      run: npm install -g expo-cli eas-cli @expo/ngrok@^4.1.0
       
     - name: Run Expo prebuild
       working-directory: CamarillaScreener
       run: npx expo prebuild --platform android --clean
       
-    - name: Bundle JavaScript for Release
+    - name: Create assets directory
+      working-directory: CamarillaScreener
+      run: mkdir -p android/app/src/main/assets
+      
+    - name: Bundle JavaScript for Android
       working-directory: CamarillaScreener
       run: |
-        mkdir -p android/app/src/main/assets
-        npx react-native bundle \
+        npx expo export:embed \
           --platform android \
-          --dev false \
-          --entry-file index.ts \
+          --entry-file node_modules/expo/AppEntry.js \
           --bundle-output android/app/src/main/assets/index.android.bundle \
-          --assets-dest android/app/src/main/res
+          --assets-dest android/app/src/main/res \
+          --dev false \
+          --reset-cache
         
     - name: Build Release APK
       working-directory: CamarillaScreener/android
