@@ -51,6 +51,11 @@ export default function App() {
   useEffect(() => {
     if (stocks.length > 0) {
       refreshComments();
+      // Initialize expanded sectors on first load (if not already set)
+      if (expandedSectors.size === 0) {
+        const allSectors = Object.keys(groupStocksBySector(stocks));
+        setExpandedSectors(new Set(allSectors));
+      }
     }
   }, [stocks]);
 
@@ -277,12 +282,7 @@ export default function App() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.groupChip, groupBy === 'sector' && styles.activeGroupChip]}
-                onPress={() => {
-                  setGroupBy('sector');
-                  // Expand all sectors by default
-                  const allSectors = Object.keys(groupStocksBySector(filteredStocks));
-                  setExpandedSectors(new Set(allSectors));
-                }}
+                onPress={() => setGroupBy('sector')}
               >
                 <Text style={[styles.groupChipText, groupBy === 'sector' && styles.activeGroupChipText]}>Sector</Text>
               </TouchableOpacity>
@@ -346,8 +346,8 @@ export default function App() {
                 showsVerticalScrollIndicator={false}
                 refreshControl={
                   <RefreshControl
-                    refreshing={false}
-                    onRefresh={handleStartScan}
+                    refreshing={isLoading}
+                    onRefresh={loadInitialData}
                     tintColor="#00E5FF"
                   />
                 }
@@ -377,8 +377,8 @@ export default function App() {
                 stickySectionHeadersEnabled={false}
                 refreshControl={
                   <RefreshControl
-                    refreshing={false}
-                    onRefresh={handleStartScan}
+                    refreshing={isLoading}
+                    onRefresh={loadInitialData}
                     tintColor="#00E5FF"
                   />
                 }
