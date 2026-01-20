@@ -40,14 +40,28 @@ jobs:
       working-directory: CamarillaScreener
       run: npx expo prebuild --platform android --clean
       
-    - name: Build Debug APK (auto-signed)
+    - name: Bundle JavaScript for Release
+      working-directory: CamarillaScreener
+      run: |
+        mkdir -p android/app/src/main/assets
+        npx react-native bundle \
+          --platform android \
+          --dev false \
+          --entry-file index.ts \
+          --bundle-output android/app/src/main/assets/index.android.bundle \
+          --assets-dest android/app/src/main/res
+        
+    - name: Build Release APK
       working-directory: CamarillaScreener/android
-      run: ./gradlew assembleDebug
+      run: ./gradlew assembleRelease
       
     - name: Find and rename APK
       working-directory: CamarillaScreener
       run: |
-        APK_PATH=$(find . -name "*-debug.apk" -type f | head -1)
+        APK_PATH=$(find . -name "*-release*.apk" -type f | head -1)
+        if [ -z "$APK_PATH" ]; then
+          APK_PATH=$(find . -name "*.apk" -type f | head -1)
+        fi
         echo "Found APK at: $APK_PATH"
         mkdir -p ./output
         cp "$APK_PATH" ./output/sajalstonks.apk
