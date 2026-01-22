@@ -11,13 +11,15 @@ interface StockDetailsModalProps {
     visible: boolean;
     onClose: () => void;
     onCommentSaved?: () => void;
+    onBuyPress?: (stock: StockData) => void;
 }
 
 export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
     stock,
     visible,
     onClose,
-    onCommentSaved
+    onCommentSaved,
+    onBuyPress
 }) => {
     const [comment, setComment] = useState('');
     const [isSaving, setIsSaving] = useState(false);
@@ -139,6 +141,23 @@ export const StockDetailsModal: React.FC<StockDetailsModalProps> = ({
                                 </View>
                             </View>
                         </View>
+
+                        {/* Buy Button */}
+                        {onBuyPress && (
+                            <TouchableOpacity
+                                style={styles.buyButtonContainer}
+                                onPress={() => onBuyPress(stock)}
+                            >
+                                <LinearGradient
+                                    colors={['#00E676', '#00C853']}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 0 }}
+                                    style={styles.buyButtonGradient}
+                                >
+                                    <Text style={styles.buyButtonText}>📈 Paper Trade - Buy</Text>
+                                </LinearGradient>
+                            </TouchableOpacity>
+                        )}
 
                         {/* OHLC Data */}
                         <View style={styles.section}>
@@ -373,5 +392,19 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontSize: 15,
         fontWeight: '600',
+    },
+    buyButtonContainer: {
+        marginBottom: 16,
+        borderRadius: 12,
+        overflow: 'hidden',
+    },
+    buyButtonGradient: {
+        paddingVertical: 14,
+        alignItems: 'center',
+    },
+    buyButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '700',
     },
 });

@@ -1,4 +1,4 @@
-// Custom Range Filter Component - Dual Slider with Presets
+// Custom Range Filter Component - Compact Design with Collapsible Slider
 
 import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, PanResponder, GestureResponderEvent, LayoutChangeEvent } from 'react-native';
@@ -26,7 +26,7 @@ export const RangeFilter: React.FC<RangeFilterProps> = ({
     matchCount = 0
 }) => {
     const [sliderWidth, setSliderWidth] = useState(0);
-    const [activePreset, setActivePreset] = useState<PresetType>('custom');
+    const [isExpanded, setIsExpanded] = useState(false);
     const [isDragging, setIsDragging] = useState<'min' | 'max' | null>(null);
 
     // Determine active preset based on values
@@ -50,11 +50,9 @@ export const RangeFilter: React.FC<RangeFilterProps> = ({
                 onRangeChange(0, 6.5);
                 break;
             case 'custom':
-                // Reset to full range
-                onRangeChange(0, 6.5);
+                setIsExpanded(true);
                 break;
         }
-        setActivePreset(preset);
     };
 
     // Calculate position percentages
@@ -70,7 +68,6 @@ export const RangeFilter: React.FC<RangeFilterProps> = ({
     const valueFromPosition = (x: number): number => {
         const percent = Math.max(0, Math.min(100, (x / sliderWidth) * 100));
         const rawValue = (percent / 100) * (absoluteMax - absoluteMin) + absoluteMin;
-        // Round to step
         const steppedValue = Math.round(rawValue / step) * step;
         return Math.max(absoluteMin, Math.min(absoluteMax, steppedValue));
     };
@@ -84,18 +81,16 @@ export const RangeFilter: React.FC<RangeFilterProps> = ({
                 setIsDragging(type);
             },
             onPanResponderMove: (evt: GestureResponderEvent) => {
-                const x = evt.nativeEvent.locationX + (type === 'min' ? minPercent * sliderWidth / 100 : maxPercent * sliderWidth / 100) - 12;
+                const x = evt.nativeEvent.locationX + (type === 'min' ? minPercent * sliderWidth / 100 : maxPercent * sliderWidth / 100) - 10;
                 const newValue = valueFromPosition(x);
 
                 if (type === 'min') {
                     if (newValue < maxValue - step) {
                         onRangeChange(newValue, maxValue);
-                        setActivePreset('custom');
                     }
                 } else {
                     if (newValue > minValue + step) {
                         onRangeChange(minValue, newValue);
-                        setActivePreset('custom');
                     }
                 }
             },
@@ -112,83 +107,29 @@ export const RangeFilter: React.FC<RangeFilterProps> = ({
 
     return (
         <View style={styles.container}>
-            {/* Header */}
+            {/* Compact Header with Presets */}
             <View style={styles.header}>
-                <Text style={styles.label}>📏 Range Filter</Text>
-                <Text style={styles.rangeValue}>{minValue.toFixed(1)}% - {maxValue.toFixed(1)}%</Text>
-            </View>
-
-            {/* Slider Track */}
-            <View style={styles.sliderContainer} onLayout={onLayout}>
-                {/* Background Track */}
-                <View style={styles.track} />
-
-                {/* Active Track */}
-                <LinearGradient
-                    colors={['#00E5FF', '#B388FF']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={[
-                        styles.activeTrack,
-                        {
-                            left: `${minPercent}%`,
-                            width: `${maxPercent - minPercent}%`,
-                        }
-                    ]}
-                />
-
-                {/* Min Handle */}
-                <View
-                    style={[
-                        styles.handleContainer,
-                        { left: `${minPercent}%` }
-                    ]}
-                    {...minPanResponder.panHandlers}
-                >
-                    <LinearGradient
-                        colors={['#00E5FF', '#B388FF']}
-                        style={[
-                            styles.handle,
-                            isDragging === 'min' && styles.handleActive
-                        ]}
-                    />
+                <View style={styles.headerLeft}>
+                    <Text style={styles.label}>📏</Text>
+                    <Text style={styles.rangeValue}>{minValue.toFixed(1)}%-{maxValue.toFixed(1)}%</Text>
+                    <Text style={styles.matchCount}>({matchCount})</Text>
                 </View>
-
-                {/* Max Handle */}
-                <View
-                    style={[
-                        styles.handleContainer,
-                        { left: `${maxPercent}%` }
-                    ]}
-                    {...maxPanResponder.panHandlers}
+                <TouchableOpacity
+                    style={styles.expandButton}
+                    onPress={() => setIsExpanded(!isExpanded)}
                 >
-                    <LinearGradient
-                        colors={['#00E5FF', '#B388FF']}
-                        style={[
-                            styles.handle,
-                            isDragging === 'max' && styles.handleActive
-                        ]}
-                    />
-                </View>
+                    <Text style={styles.expandIcon}>{isExpanded ? '▲' : '▼'}</Text>
+                </TouchableOpacity>
             </View>
 
-            {/* Scale Labels */}
-            <View style={styles.scaleLabels}>
-                <Text style={styles.scaleText}>0%</Text>
-                <Text style={styles.scaleText}>2.5%</Text>
-                <Text style={styles.scaleText}>5%</Text>
-                <Text style={styles.scaleText}>7.5%</Text>
-                <Text style={styles.scaleText}>10%</Text>
-            </View>
-
-            {/* Preset Chips */}
+            {/* Preset Chips - Always Visible */}
             <View style={styles.presetsContainer}>
                 <TouchableOpacity
                     style={[styles.presetChip, currentPreset === 'under3' && styles.presetChipActive]}
                     onPress={() => handlePresetPress('under3')}
                 >
                     <Text style={[styles.presetText, currentPreset === 'under3' && styles.presetTextActive]}>
-                        Under 3%
+                        🔥 &lt;3%
                     </Text>
                 </TouchableOpacity>
 
@@ -197,7 +138,7 @@ export const RangeFilter: React.FC<RangeFilterProps> = ({
                     onPress={() => handlePresetPress('under5')}
                 >
                     <Text style={[styles.presetText, currentPreset === 'under5' && styles.presetTextActive]}>
-                        Under 5%
+                        &lt;5%
                     </Text>
                 </TouchableOpacity>
 
@@ -206,7 +147,7 @@ export const RangeFilter: React.FC<RangeFilterProps> = ({
                     onPress={() => handlePresetPress('under6.5')}
                 >
                     <Text style={[styles.presetText, currentPreset === 'under6.5' && styles.presetTextActive]}>
-                        Under 6.5%
+                        &lt;6.5%
                     </Text>
                 </TouchableOpacity>
 
@@ -215,17 +156,54 @@ export const RangeFilter: React.FC<RangeFilterProps> = ({
                     onPress={() => handlePresetPress('custom')}
                 >
                     <Text style={[styles.presetText, currentPreset === 'custom' && styles.presetTextActive]}>
-                        Custom {currentPreset === 'custom' ? '✓' : ''}
+                        ⚙️ Custom
                     </Text>
                 </TouchableOpacity>
             </View>
 
-            {/* Match Count */}
-            <View style={styles.matchContainer}>
-                <Text style={styles.matchText}>
-                    <Text style={styles.matchCount}>{matchCount}</Text> stocks match this filter
-                </Text>
-            </View>
+            {/* Expandable Slider Section */}
+            {isExpanded && (
+                <View style={styles.sliderSection}>
+                    <View style={styles.sliderContainer} onLayout={onLayout}>
+                        <View style={styles.track} />
+                        <LinearGradient
+                            colors={['#00E5FF', '#B388FF']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={[
+                                styles.activeTrack,
+                                {
+                                    left: `${minPercent}%`,
+                                    width: `${maxPercent - minPercent}%`,
+                                }
+                            ]}
+                        />
+                        <View
+                            style={[styles.handleContainer, { left: `${minPercent}%` }]}
+                            {...minPanResponder.panHandlers}
+                        >
+                            <LinearGradient
+                                colors={['#00E5FF', '#B388FF']}
+                                style={[styles.handle, isDragging === 'min' && styles.handleActive]}
+                            />
+                        </View>
+                        <View
+                            style={[styles.handleContainer, { left: `${maxPercent}%` }]}
+                            {...maxPanResponder.panHandlers}
+                        >
+                            <LinearGradient
+                                colors={['#00E5FF', '#B388FF']}
+                                style={[styles.handle, isDragging === 'max' && styles.handleActive]}
+                            />
+                        </View>
+                    </View>
+                    <View style={styles.scaleLabels}>
+                        <Text style={styles.scaleText}>0%</Text>
+                        <Text style={styles.scaleText}>5%</Text>
+                        <Text style={styles.scaleText}>10%</Text>
+                    </View>
+                </View>
+            )}
         </View>
     );
 };
@@ -234,9 +212,9 @@ const styles = StyleSheet.create({
     container: {
         backgroundColor: 'rgba(13, 11, 18, 0.6)',
         marginHorizontal: 16,
-        marginBottom: 12,
-        borderRadius: 16,
-        padding: 16,
+        marginBottom: 8,
+        borderRadius: 12,
+        padding: 10,
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.05)',
     },
@@ -244,83 +222,40 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: 8,
+    },
+    headerLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
     },
     label: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: 'rgba(255, 255, 255, 0.6)',
-        textTransform: 'uppercase',
-        letterSpacing: 1,
+        fontSize: 14,
     },
     rangeValue: {
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: '700',
         color: '#00E5FF',
     },
-    sliderContainer: {
-        height: 40,
-        justifyContent: 'center',
-        marginBottom: 4,
+    matchCount: {
+        fontSize: 12,
+        color: 'rgba(255, 255, 255, 0.4)',
     },
-    track: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        height: 6,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-        borderRadius: 3,
+    expandButton: {
+        padding: 4,
     },
-    activeTrack: {
-        position: 'absolute',
-        height: 6,
-        borderRadius: 3,
-    },
-    handleContainer: {
-        position: 'absolute',
-        width: 28,
-        height: 28,
-        marginLeft: -14,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    handle: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        borderWidth: 3,
-        borderColor: '#0d0b12',
-        shadowColor: '#00E5FF',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.5,
-        shadowRadius: 8,
-        elevation: 5,
-    },
-    handleActive: {
-        transform: [{ scale: 1.15 }],
-        shadowOpacity: 0.8,
-        shadowRadius: 12,
-    },
-    scaleLabels: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 16,
-        paddingHorizontal: 2,
-    },
-    scaleText: {
+    expandIcon: {
         fontSize: 10,
-        color: 'rgba(255, 255, 255, 0.3)',
+        color: 'rgba(255, 255, 255, 0.5)',
     },
     presetsContainer: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-        marginBottom: 12,
+        gap: 6,
     },
     presetChip: {
-        paddingVertical: 8,
-        paddingHorizontal: 14,
-        borderRadius: 20,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 16,
         backgroundColor: 'rgba(255, 255, 255, 0.05)',
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -328,30 +263,63 @@ const styles = StyleSheet.create({
     presetChipActive: {
         backgroundColor: 'rgba(0, 229, 255, 0.15)',
         borderColor: '#00E5FF',
-        shadowColor: '#00E5FF',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 3,
     },
     presetText: {
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: '600',
         color: 'rgba(255, 255, 255, 0.5)',
     },
     presetTextActive: {
         color: '#00E5FF',
     },
-    matchContainer: {
+    sliderSection: {
+        marginTop: 10,
+        paddingTop: 10,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    sliderContainer: {
+        height: 28,
+        justifyContent: 'center',
+    },
+    track: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        height: 4,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 2,
+    },
+    activeTrack: {
+        position: 'absolute',
+        height: 4,
+        borderRadius: 2,
+    },
+    handleContainer: {
+        position: 'absolute',
+        width: 20,
+        height: 20,
+        marginLeft: -10,
         alignItems: 'center',
+        justifyContent: 'center',
     },
-    matchText: {
-        fontSize: 12,
-        color: 'rgba(255, 255, 255, 0.4)',
+    handle: {
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        borderWidth: 2,
+        borderColor: '#0d0b12',
     },
-    matchCount: {
-        color: '#00E5FF',
-        fontWeight: '700',
-        fontSize: 14,
+    handleActive: {
+        transform: [{ scale: 1.1 }],
+    },
+    scaleLabels: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: 4,
+    },
+    scaleText: {
+        fontSize: 9,
+        color: 'rgba(255, 255, 255, 0.3)',
     },
 });

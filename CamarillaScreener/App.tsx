@@ -17,9 +17,11 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { StockData, TabType, StockComment, GroupBy } from './src/types';
-import { StockListItem, StockDetailsModal, ScanProgress, CommentsList, SectorHeader, SearchBar, RangeFilter } from './src/components';
+import { Portfolio, createEmptyPortfolio } from './src/types/trading';
+import { StockListItem, StockDetailsModal, ScanProgress, CommentsList, SectorHeader, SearchBar, RangeFilter, TradingTab, TradeModal } from './src/components';
 import { scanAllStocks, groupStocksBySector } from './src/services/api';
 import { saveScanResults, loadCachedResults, getCacheTimestamp, getStocksWithComments } from './src/services/storage';
+import { loadPortfolio, addPosition } from './src/services/tradingStorage';
 import { exportToCSV } from './src/services/export';
 import { getLastCompletedMonth } from './src/utils/calculations';
 
@@ -44,12 +46,27 @@ export default function App() {
   const [minRange, setMinRange] = useState(0);
   const [maxRange, setMaxRange] = useState(6.5);
 
+  // NEW: Trading state
+  const [portfolio, setPortfolio] = useState<Portfolio>(createEmptyPortfolio());
+  const [buyModalVisible, setBuyModalVisible] = useState(false);
+  const [stockToBuy, setStockToBuy] = useState<StockData | null>(null);
+
   const cancelRef = useRef(false);
 
   // Load cached results on app start
   useEffect(() => {
     loadInitialData();
+    loadPortfolioData();
   }, []);
+
+  const loadPortfolioData = async () => {
+    try {
+      const loaded = await loadPortfolio();
+      setPortfolio(loaded);
+    } catch (error) {
+      console.error('Error loading portfolio:', error);
+    }
+  };
 
   // Refresh comments when stocks change
   useEffect(() => {
@@ -260,11 +277,19 @@ export default function App() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={[styles.tab, activeTab === 'trading' && styles.activeTab]}
+            onPress={() => setActiveTab('trading')}
+          >
+            <Text style={[styles.tabText, activeTab === 'trading' && styles.activeTabText]}>
+              📈 Trading
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.tab, activeTab === 'comments' && styles.activeTab]}
             onPress={() => setActiveTab('comments')}
           >
             <Text style={[styles.tabText, activeTab === 'comments' && styles.activeTabText]}>
-              💬 Notes ({stocksWithComments.length})
+              💬 Notes
             </Text>
           </TouchableOpacity>
         </View>
@@ -427,6 +452,11 @@ export default function App() {
           />
         )}
 
+        {/* Trading Tab Content */}
+        {activeTab === 'trading' && (
+          <TradingTab stocks={stocks} />
+        )}
+
         {/* Stock Details Modal */}
         <StockDetailsModal
           stock={selectedStock}
@@ -436,6 +466,43 @@ export default function App() {
             setSelectedStock(null);
           }}
           onCommentSaved={handleCommentSaved}
+          onBuyPress={(stock) => {
+            setStockToBuy(stock);
+            setModalVisible(false);
+            setBuyModalVisible(true);
+          }}
+        />
+
+        {/* Buy Modal */}
+        <TradeModal
+          visible={buyModalVisible}
+          onClose={() => {
+            setBuyModalVisible(false);
+            setStockToBuy(null);
+          }}
+          stock={stockToBuy}
+          mode="BUY"
+          availableCash={portfolio.cash}
+          onConfirm={async (quantity, notes) => {
+            if (!stockToBuy || !stockToBuy.close) return;
+            try {
+              const updatedPortfolio = await addPosition(
+                portfolio,
+                stockToBuy.ticker,
+                stockToBuy.companyName || stockToBuy.ticker,
+                stockToBuy.sector || 'Other',
+                quantity,
+                stockToBuy.close,
+                stockToBuy.r3 || null,
+                stockToBuy.s3 || null,
+                notes
+              );
+              setPortfolio(updatedPortfolio);
+              Alert.alert('Success!', `Bought ${quantity} shares of ${stockToBuy.ticker.replace('.NS', '')}`);
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to buy');
+            }
+          }}
         />
       </SafeAreaView>
     </LinearGradient>
