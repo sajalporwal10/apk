@@ -454,7 +454,12 @@ export default function App() {
 
         {/* Trading Tab Content */}
         {activeTab === 'trading' && (
-          <TradingTab stocks={stocks} />
+          <TradingTab
+            stocks={stocks}
+            portfolio={portfolio}
+            onPortfolioChange={setPortfolio}
+            onRefreshPortfolio={loadPortfolioData}
+          />
         )}
 
         {/* Stock Details Modal */}

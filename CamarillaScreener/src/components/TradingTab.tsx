@@ -1,6 +1,6 @@
 // Trading Tab Component - Main trading screen with portfolio and positions
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -29,38 +29,30 @@ import { fetchCurrentPrice } from '../services/api';
 
 interface TradingTabProps {
     stocks: StockData[]; // For updating current prices
+    portfolio: Portfolio; // Now received from parent
+    onPortfolioChange: (portfolio: Portfolio) => void; // Callback to update parent state
+    onRefreshPortfolio: () => void; // Callback to reload portfolio from storage
 }
 
 type SubTab = 'positions' | 'history';
 
-export const TradingTab: React.FC<TradingTabProps> = ({ stocks }) => {
-    const [portfolio, setPortfolio] = useState<Portfolio>(createEmptyPortfolio());
+export const TradingTab: React.FC<TradingTabProps> = ({
+    stocks,
+    portfolio,
+    onPortfolioChange,
+    onRefreshPortfolio
+}) => {
     const [activeSubTab, setActiveSubTab] = useState<SubTab>('positions');
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
     const [isFetchingPrice, setIsFetchingPrice] = useState(false);
     const [sellModalVisible, setSellModalVisible] = useState(false);
     const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
     const [currentSellPrice, setCurrentSellPrice] = useState<number | null>(null);
 
-    // Load portfolio on mount
-    useEffect(() => {
-        loadInitialPortfolio();
-    }, []);
-
-    // Update position prices when stocks data changes
-    useEffect(() => {
-        if (stocks.length > 0 && portfolio.positions.length > 0) {
-            updatePrices();
-        }
-    }, [stocks]);
-
-    const loadInitialPortfolio = async () => {
+    const handleRefresh = async () => {
         setIsLoading(true);
         try {
-            const loaded = await loadPortfolio();
-            setPortfolio(loaded);
-        } catch (error) {
-            console.error('Error loading portfolio:', error);
+            onRefreshPortfolio();
         } finally {
             setIsLoading(false);
         }
@@ -82,9 +74,9 @@ export const TradingTab: React.FC<TradingTabProps> = ({ stocks }) => {
 
         if (hasUpdates) {
             await savePortfolio(updatedPortfolio);
-            setPortfolio(updatedPortfolio);
+            onPortfolioChange(updatedPortfolio);
         }
-    }, [portfolio, stocks]);
+    }, [portfolio, stocks, onPortfolioChange]);
 
     const handleSellPress = async (position: Position) => {
         setSelectedPosition(position);
@@ -130,7 +122,7 @@ export const TradingTab: React.FC<TradingTabProps> = ({ stocks }) => {
                 currentSellPrice, // Use the fetched current price
                 notes
             );
-            setPortfolio(updatedPortfolio);
+            onPortfolioChange(updatedPortfolio);
             Alert.alert(
                 'Sold!',
                 `Successfully sold ${quantity} shares of ${selectedPosition.ticker.replace('.NS', '')} at ₹${currentSellPrice.toFixed(2)}`
@@ -151,7 +143,7 @@ export const TradingTab: React.FC<TradingTabProps> = ({ stocks }) => {
                     style: 'destructive',
                     onPress: async () => {
                         const newPortfolio = await resetPortfolio();
-                        setPortfolio(newPortfolio);
+                        onPortfolioChange(newPortfolio);
                     },
                 },
             ]
@@ -192,7 +184,7 @@ export const TradingTab: React.FC<TradingTabProps> = ({ stocks }) => {
                     refreshControl={
                         <RefreshControl
                             refreshing={isLoading}
-                            onRefresh={loadInitialPortfolio}
+                            onRefresh={handleRefresh}
                             tintColor="#00E5FF"
                         />
                     }
