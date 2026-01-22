@@ -1,7 +1,7 @@
 // Position Card Component - Displays individual position with P&L
 
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Position } from '../types/trading';
 import {
     calculatePositionPnL,
@@ -15,9 +15,10 @@ import {
 interface PositionCardProps {
     position: Position;
     onSellPress: (position: Position) => void;
+    isLoading?: boolean;
 }
 
-export const PositionCard: React.FC<PositionCardProps> = ({ position, onSellPress }) => {
+export const PositionCard: React.FC<PositionCardProps> = ({ position, onSellPress, isLoading = false }) => {
     const { pnl, pnlPercent } = calculatePositionPnL(position);
     const distanceToTarget = calculateDistanceToTarget(position);
     const distanceToStopLoss = calculateDistanceToStopLoss(position);
@@ -90,10 +91,15 @@ export const PositionCard: React.FC<PositionCardProps> = ({ position, onSellPres
             <View style={styles.footer}>
                 <Text style={styles.daysHeld}>{daysHeld}d held • {formatCurrency(currentValue)}</Text>
                 <TouchableOpacity
-                    style={styles.sellButton}
+                    style={[styles.sellButton, isLoading && styles.sellButtonLoading]}
                     onPress={() => onSellPress(position)}
+                    disabled={isLoading}
                 >
-                    <Text style={styles.sellButtonText}>Sell</Text>
+                    {isLoading ? (
+                        <ActivityIndicator size="small" color="#FF5252" />
+                    ) : (
+                        <Text style={styles.sellButtonText}>Sell</Text>
+                    )}
                 </TouchableOpacity>
             </View>
         </View>
@@ -206,5 +212,9 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: '600',
         color: '#FF5252',
+    },
+    sellButtonLoading: {
+        opacity: 0.6,
+        minWidth: 50,
     },
 });

@@ -347,3 +347,53 @@ export function groupStocksBySector(stocks: StockData[]): { [sector: string]: St
 
     return groups;
 }
+
+/**
+ * Fetch current real-time price for a single stock
+ * Uses Yahoo Finance to get the latest closing price
+ */
+export async function fetchCurrentPrice(ticker: string): Promise<number | null> {
+    try {
+        // Ensure ticker has .NS suffix
+        const formattedTicker = ticker.endsWith('.NS') ? ticker : `${ticker}.NS`;
+
+        // Fetch daily data for the last 5 days to get the most recent price
+        const now = Math.floor(Date.now() / 1000);
+        const fiveDaysAgo = now - (5 * 24 * 60 * 60);
+
+        const url = `${YAHOO_CHART_BASE}/${formattedTicker}?interval=1d&period1=${fiveDaysAgo}&period2=${now}`;
+
+        const response = await fetchWithTimeout(url, REQUEST_TIMEOUT);
+
+        if (!response.ok) {
+            console.error(`Failed to fetch price for ${ticker}: ${response.status}`);
+            return null;
+        }
+
+        const data: YahooChartResponse = await response.json();
+
+        if (!data.chart.result || data.chart.result.length === 0) {
+            return null;
+        }
+
+        const result = data.chart.result[0];
+        const quote = result.indicators.quote[0];
+
+        if (!quote || !quote.close || quote.close.length === 0) {
+            return null;
+        }
+
+        // Get the most recent close price (last non-null value)
+        for (let i = quote.close.length - 1; i >= 0; i--) {
+            if (quote.close[i] !== null) {
+                return Math.round(quote.close[i] * 100) / 100; // Round to 2 decimal places
+            }
+        }
+
+        return null;
+    } catch (error) {
+        console.error(`Error fetching current price for ${ticker}:`, error);
+        return null;
+    }
+}
+

@@ -9,6 +9,7 @@ import {
     StyleSheet,
     RefreshControl,
     Alert,
+    ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Portfolio, Position, createEmptyPortfolio } from '../types/trading';
@@ -24,6 +25,7 @@ import {
     resetPortfolio
 } from '../services/tradingStorage';
 import { calculatePortfolioSummary } from '../services/trading';
+import { fetchCurrentPrice } from '../services/api';
 
 interface TradingTabProps {
     stocks: StockData[]; // For updating current prices
@@ -35,8 +37,10 @@ export const TradingTab: React.FC<TradingTabProps> = ({ stocks }) => {
     const [portfolio, setPortfolio] = useState<Portfolio>(createEmptyPortfolio());
     const [activeSubTab, setActiveSubTab] = useState<SubTab>('positions');
     const [isLoading, setIsLoading] = useState(true);
+    const [isFetchingPrice, setIsFetchingPrice] = useState(false);
     const [sellModalVisible, setSellModalVisible] = useState(false);
     const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
+    const [currentSellPrice, setCurrentSellPrice] = useState<number | null>(null);
 
     // Load portfolio on mount
     useEffect(() => {
@@ -82,24 +86,55 @@ export const TradingTab: React.FC<TradingTabProps> = ({ stocks }) => {
         }
     }, [portfolio, stocks]);
 
-    const handleSellPress = (position: Position) => {
+    const handleSellPress = async (position: Position) => {
         setSelectedPosition(position);
-        setSellModalVisible(true);
+        setIsFetchingPrice(true);
+        setCurrentSellPrice(null);
+
+        try {
+            // Fetch current market price
+            const currentPrice = await fetchCurrentPrice(position.ticker);
+
+            if (currentPrice !== null) {
+                setCurrentSellPrice(currentPrice);
+                // Update position's current price
+                position.currentPrice = currentPrice;
+            } else {
+                // Fallback to stored price if fetch fails
+                setCurrentSellPrice(position.currentPrice);
+                Alert.alert(
+                    'Price Update',
+                    'Could not fetch live price. Using last known price.',
+                    [{ text: 'OK' }]
+                );
+            }
+
+            setSellModalVisible(true);
+        } catch (error) {
+            console.error('Error fetching price:', error);
+            setCurrentSellPrice(position.currentPrice);
+            setSellModalVisible(true);
+        } finally {
+            setIsFetchingPrice(false);
+        }
     };
 
     const handleSellConfirm = async (quantity: number, notes: string) => {
-        if (!selectedPosition) return;
+        if (!selectedPosition || currentSellPrice === null) return;
 
         try {
             const updatedPortfolio = await sellPositionAction(
                 portfolio,
                 selectedPosition.ticker,
                 quantity,
-                selectedPosition.currentPrice,
+                currentSellPrice, // Use the fetched current price
                 notes
             );
             setPortfolio(updatedPortfolio);
-            Alert.alert('Sold!', `Successfully sold ${quantity} shares of ${selectedPosition.ticker.replace('.NS', '')}`);
+            Alert.alert(
+                'Sold!',
+                `Successfully sold ${quantity} shares of ${selectedPosition.ticker.replace('.NS', '')} at ₹${currentSellPrice.toFixed(2)}`
+            );
         } catch (error: any) {
             Alert.alert('Error', error.message || 'Failed to sell position');
         }
@@ -177,6 +212,7 @@ export const TradingTab: React.FC<TradingTabProps> = ({ stocks }) => {
                                 key={position.id}
                                 position={position}
                                 onSellPress={handleSellPress}
+                                isLoading={isFetchingPrice && selectedPosition?.id === position.id}
                             />
                         ))
                     )}
@@ -199,9 +235,10 @@ export const TradingTab: React.FC<TradingTabProps> = ({ stocks }) => {
                 onClose={() => {
                     setSellModalVisible(false);
                     setSelectedPosition(null);
+                    setCurrentSellPrice(null);
                 }}
                 stock={null}
-                position={selectedPosition}
+                position={selectedPosition ? { ...selectedPosition, currentPrice: currentSellPrice || selectedPosition.currentPrice } : null}
                 mode="SELL"
                 availableCash={portfolio.cash}
                 onConfirm={handleSellConfirm}
