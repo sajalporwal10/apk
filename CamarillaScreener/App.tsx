@@ -16,8 +16,8 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { StockData, RangeFilter, TabType, StockComment, GroupBy } from './src/types';
-import { StockListItem, StockDetailsModal, ScanProgress, CommentsList, SectorHeader } from './src/components';
+import { StockData, TabType, StockComment, GroupBy } from './src/types';
+import { StockListItem, StockDetailsModal, ScanProgress, CommentsList, SectorHeader, SearchBar, RangeFilter } from './src/components';
 import { scanAllStocks, groupStocksBySector } from './src/services/api';
 import { saveScanResults, loadCachedResults, getCacheTimestamp, getStocksWithComments } from './src/services/storage';
 import { exportToCSV } from './src/services/export';
@@ -36,9 +36,13 @@ export default function App() {
 
   // Tabs, filters, and grouping
   const [activeTab, setActiveTab] = useState<TabType>('screener');
-  const [rangeFilter, setRangeFilter] = useState<RangeFilter>('under5');
   const [groupBy, setGroupBy] = useState<GroupBy>('none');
   const [expandedSectors, setExpandedSectors] = useState<Set<string>>(new Set());
+
+  // NEW: Search and custom range filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [minRange, setMinRange] = useState(0);
+  const [maxRange, setMaxRange] = useState(6.5);
 
   const cancelRef = useRef(false);
 
@@ -170,14 +174,34 @@ export default function App() {
     });
   };
 
-  // Filter stocks based on range filter
+  // Handle range change from RangeFilter component
+  const handleRangeChange = useCallback((min: number, max: number) => {
+    setMinRange(min);
+    setMaxRange(max);
+  }, []);
+
+  // Filter stocks based on search query and custom range filter
   const filteredStocks = useMemo(() => {
-    if (rangeFilter === 'under5') {
-      return stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 < 5);
-    } else {
-      return stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 >= 5 && s.pctRangeR3 <= 6.5);
-    }
-  }, [stocks, rangeFilter]);
+    return stocks.filter(s => {
+      // Range filter
+      if (s.pctRangeR3 === null) return false;
+      if (s.pctRangeR3 < minRange || s.pctRangeR3 > maxRange) return false;
+
+      // Search filter
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase().trim();
+        const ticker = s.ticker.replace('.NS', '').toLowerCase();
+        const companyName = (s.companyName || '').toLowerCase();
+        const sector = (s.sector || '').toLowerCase();
+
+        if (!ticker.includes(query) && !companyName.includes(query) && !sector.includes(query)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [stocks, minRange, maxRange, searchQuery]);
 
   // Group stocks by sector for section list
   const sectionData = useMemo(() => {
@@ -195,8 +219,6 @@ export default function App() {
   }, [filteredStocks, groupBy, expandedSectors]);
 
   const { label: refMonth } = getLastCompletedMonth();
-  const under5Count = stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 < 5).length;
-  const between5and6Count = stocks.filter(s => s.pctRangeR3 !== null && s.pctRangeR3 >= 5 && s.pctRangeR3 <= 6.5).length;
 
   return (
     <LinearGradient
@@ -250,26 +272,23 @@ export default function App() {
         {/* Screener Tab Content */}
         {activeTab === 'screener' && (
           <>
-            {/* Range Filter Chips */}
-            <View style={styles.filterRow}>
-              <TouchableOpacity
-                style={[styles.filterChip, rangeFilter === 'under5' && styles.activeFilterChip]}
-                onPress={() => setRangeFilter('under5')}
-              >
-                <Text style={[styles.filterChipText, rangeFilter === 'under5' && styles.activeFilterChipText]}>
-                  🔥 Under 5% ({under5Count})
-                </Text>
-              </TouchableOpacity>
+            {/* NEW: Search Bar */}
+            <SearchBar
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search stocks by name, symbol, or sector..."
+            />
 
-              <TouchableOpacity
-                style={[styles.filterChip, rangeFilter === 'between5and6.5' && styles.activeFilterChip]}
-                onPress={() => setRangeFilter('between5and6.5')}
-              >
-                <Text style={[styles.filterChipText, rangeFilter === 'between5and6.5' && styles.activeFilterChipText]}>
-                  📊 5-6.5% ({between5and6Count})
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* NEW: Custom Range Filter */}
+            <RangeFilter
+              minValue={minRange}
+              maxValue={maxRange}
+              onRangeChange={handleRangeChange}
+              absoluteMin={0}
+              absoluteMax={10}
+              step={0.5}
+              matchCount={filteredStocks.length}
+            />
 
             {/* Group By Toggle */}
             <View style={styles.groupToggleRow}>
@@ -389,9 +408,11 @@ export default function App() {
             {!isLoading && !isScanning && stocks.length > 0 && filteredStocks.length === 0 && (
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyIcon}>🔍</Text>
-                <Text style={styles.emptyTitle}>No Stocks in Range</Text>
+                <Text style={styles.emptyTitle}>No Matches Found</Text>
                 <Text style={styles.emptyText}>
-                  No stocks found with {rangeFilter === 'under5' ? 'range under 5%' : 'range between 5% and 6.5%'}
+                  {searchQuery.trim()
+                    ? `No stocks found matching "${searchQuery}" in range ${minRange}%-${maxRange}%`
+                    : `No stocks found with range ${minRange}%-${maxRange}%`}
                 </Text>
               </View>
             )}

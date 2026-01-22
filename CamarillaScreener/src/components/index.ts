@@ -4,3 +4,5 @@ export { StockDetailsModal } from './StockDetailsModal';
 export { ScanProgress } from './ScanProgress';
 export { CommentsList } from './CommentsList';
 export { SectorHeader } from './SectorHeader';
+export { SearchBar } from './SearchBar';
+export { RangeFilter } from './RangeFilter';
