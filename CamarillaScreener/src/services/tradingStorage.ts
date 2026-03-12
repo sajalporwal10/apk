@@ -1,16 +1,24 @@
 // Trading Storage Service - Persist portfolio data locally
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Portfolio, Position, Trade, createEmptyPortfolio, DEFAULT_INITIAL_CAPITAL } from '../types/trading';
+import { Portfolio, Position, Trade, ArchivedSession, createEmptyPortfolio, DEFAULT_INITIAL_CAPITAL } from '../types/trading';
+import { calculatePortfolioSummary } from './trading';
 
 const PORTFOLIO_KEY = '@camarilla_portfolio';
+const ARCHIVE_KEY = '@camarilla_archived_sessions';
 
 // Load portfolio from storage
 export const loadPortfolio = async (): Promise<Portfolio> => {
     try {
         const data = await AsyncStorage.getItem(PORTFOLIO_KEY);
         if (data) {
-            return JSON.parse(data);
+            const portfolio = JSON.parse(data);
+            // Migration: add sessionId if missing (from old data)
+            if (!portfolio.sessionId) {
+                portfolio.sessionId = `session_${portfolio.lastUpdated || Date.now()}_migrated`;
+                portfolio.sessionStartDate = portfolio.lastUpdated || Date.now();
+            }
+            return portfolio;
         }
         return createEmptyPortfolio();
     } catch (error) {
@@ -30,15 +38,64 @@ export const savePortfolio = async (portfolio: Portfolio): Promise<void> => {
     }
 };
 
-// Reset portfolio to initial state
-export const resetPortfolio = async (initialCapital: number = DEFAULT_INITIAL_CAPITAL): Promise<Portfolio> => {
-    const newPortfolio: Portfolio = {
-        cash: initialCapital,
-        initialCapital,
-        positions: [],
-        tradeHistory: [],
-        lastUpdated: Date.now(),
+// Load archived sessions
+export const loadArchivedSessions = async (): Promise<ArchivedSession[]> => {
+    try {
+        const data = await AsyncStorage.getItem(ARCHIVE_KEY);
+        if (data) {
+            return JSON.parse(data);
+        }
+        return [];
+    } catch (error) {
+        console.error('Error loading archives:', error);
+        return [];
+    }
+};
+
+// Save archived sessions
+const saveArchivedSessions = async (sessions: ArchivedSession[]): Promise<void> => {
+    try {
+        await AsyncStorage.setItem(ARCHIVE_KEY, JSON.stringify(sessions));
+    } catch (error) {
+        console.error('Error saving archives:', error);
+    }
+};
+
+// Archive current portfolio session before reset
+const archiveCurrentSession = async (portfolio: Portfolio): Promise<void> => {
+    // Only archive if there's meaningful activity
+    if (portfolio.tradeHistory.length === 0) return;
+
+    const summary = calculatePortfolioSummary(portfolio);
+
+    const archivedSession: ArchivedSession = {
+        sessionId: portfolio.sessionId,
+        startDate: portfolio.sessionStartDate,
+        endDate: Date.now(),
+        initialCapital: portfolio.initialCapital,
+        finalValue: summary.totalValue,
+        finalPnL: summary.totalPnL,
+        finalPnLPercent: summary.totalPnLPercent,
+        tradeCount: portfolio.tradeHistory.length,
+        tradeHistory: [...portfolio.tradeHistory],
     };
+
+    const archives = await loadArchivedSessions();
+    archives.unshift(archivedSession); // Most recent first
+    await saveArchivedSessions(archives);
+};
+
+// Reset portfolio to initial state (archives current session first)
+export const resetPortfolio = async (initialCapital: number = DEFAULT_INITIAL_CAPITAL): Promise<Portfolio> => {
+    // Load current portfolio to archive it
+    const currentPortfolio = await loadPortfolio();
+    await archiveCurrentSession(currentPortfolio);
+
+    // Create fresh portfolio
+    const newPortfolio = createEmptyPortfolio();
+    newPortfolio.cash = initialCapital;
+    newPortfolio.initialCapital = initialCapital;
+
     await savePortfolio(newPortfolio);
     return newPortfolio;
 };
@@ -118,7 +175,7 @@ export const addPosition = async (
     return portfolio;
 };
 
-// Sell a position (partial or full)
+// Sell a position (partial or full) — now with P&L tracking
 export const sellPosition = async (
     portfolio: Portfolio,
     ticker: string,
@@ -138,6 +195,12 @@ export const sellPosition = async (
 
     const totalValue = quantity * price;
 
+    // Calculate P&L for this sell trade
+    const entryPrice = position.entryPrice;
+    const investedValue = quantity * entryPrice;
+    const pnl = totalValue - investedValue;
+    const pnlPercent = investedValue > 0 ? (pnl / investedValue) * 100 : 0;
+
     if (quantity === position.quantity) {
         // Close entire position
         portfolio.positions = portfolio.positions.filter(p => p.ticker !== ticker);
@@ -149,7 +212,7 @@ export const sellPosition = async (
     // Add cash
     portfolio.cash += totalValue;
 
-    // Add to trade history
+    // Add to trade history with P&L data
     const trade: Trade = {
         id: generateId(),
         ticker,
@@ -160,6 +223,9 @@ export const sellPosition = async (
         totalValue,
         timestamp: Date.now(),
         notes,
+        entryPrice,
+        pnl: Math.round(pnl * 100) / 100,
+        pnlPercent: Math.round(pnlPercent * 100) / 100,
     };
     portfolio.tradeHistory.unshift(trade);
 

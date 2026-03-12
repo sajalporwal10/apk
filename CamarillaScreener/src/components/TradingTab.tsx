@@ -1,4 +1,5 @@
 // Trading Tab Component - Main trading screen with portfolio and positions
+// Features: Triple-confirmation reset, trade history export, P&L tracking
 
 import React, { useState, useCallback } from 'react';
 import {
@@ -26,6 +27,7 @@ import {
 } from '../services/tradingStorage';
 import { calculatePortfolioSummary } from '../services/trading';
 import { fetchCurrentPrice } from '../services/api';
+import { exportTradeHistoryToCSV } from '../services/export';
 
 interface TradingTabProps {
     stocks: StockData[]; // For updating current prices
@@ -48,6 +50,8 @@ export const TradingTab: React.FC<TradingTabProps> = ({
     const [sellModalVisible, setSellModalVisible] = useState(false);
     const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
     const [currentSellPrice, setCurrentSellPrice] = useState<number | null>(null);
+    const [isExporting, setIsExporting] = useState(false);
+    const [resetConfirmCount, setResetConfirmCount] = useState(0);
 
     const handleRefresh = async () => {
         setIsLoading(true);
@@ -132,22 +136,71 @@ export const TradingTab: React.FC<TradingTabProps> = ({
         }
     };
 
+    // Triple-confirmation reset flow
     const handleResetPortfolio = () => {
-        Alert.alert(
-            'Reset Portfolio',
-            'This will reset your portfolio to ₹1,00,000 and clear all positions and history. Are you sure?',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Reset',
-                    style: 'destructive',
-                    onPress: async () => {
-                        const newPortfolio = await resetPortfolio();
-                        onPortfolioChange(newPortfolio);
+        const confirmMessages = [
+            {
+                title: '⚠️ Reset Portfolio (1/3)',
+                message: 'This will reset your portfolio to ₹1,00,000 and close all positions.\n\nYour trade history will be ARCHIVED (not deleted).\n\nAre you sure?',
+            },
+            {
+                title: '⚠️ Are You Sure? (2/3)',
+                message: 'This action cannot be undone.\n\nAll open positions will be closed and cash reset to ₹1,00,000.\n\nConfirm again to proceed.',
+            },
+            {
+                title: '🚨 Final Confirmation (3/3)',
+                message: 'THIS IS YOUR LAST CHANCE.\n\nYour current session will be archived.\nPortfolio will be completely reset.\n\nProceed with reset?',
+            },
+        ];
+
+        const showConfirmation = (step: number) => {
+            const config = confirmMessages[step];
+            Alert.alert(
+                config.title,
+                config.message,
+                [
+                    { text: 'Cancel', style: 'cancel', onPress: () => setResetConfirmCount(0) },
+                    {
+                        text: step < 2 ? 'Continue' : '🔴 Reset Now',
+                        style: 'destructive',
+                        onPress: async () => {
+                            if (step < 2) {
+                                showConfirmation(step + 1);
+                            } else {
+                                // Final confirmation passed - do the reset
+                                const newPortfolio = await resetPortfolio();
+                                onPortfolioChange(newPortfolio);
+                                setResetConfirmCount(0);
+                                Alert.alert(
+                                    'Portfolio Reset ✅',
+                                    'Your previous session has been archived.\nStarting fresh with ₹1,00,000.',
+                                    [{ text: 'OK' }]
+                                );
+                            }
+                        },
                     },
-                },
-            ]
-        );
+                ]
+            );
+        };
+
+        showConfirmation(0);
+    };
+
+    // Export trade history
+    const handleExportHistory = async () => {
+        if (portfolio.tradeHistory.length === 0) {
+            Alert.alert('No Trades', 'No trade history to export yet.');
+            return;
+        }
+
+        setIsExporting(true);
+        try {
+            await exportTradeHistoryToCSV(portfolio.tradeHistory);
+        } catch (error) {
+            Alert.alert('Export Failed', 'Could not export trade history. Please try again.');
+        } finally {
+            setIsExporting(false);
+        }
     };
 
     const summary = calculatePortfolioSummary(portfolio);
@@ -209,16 +262,52 @@ export const TradingTab: React.FC<TradingTabProps> = ({
                         ))
                     )}
 
-                    {/* Reset Button */}
-                    <TouchableOpacity style={styles.resetButton} onPress={handleResetPortfolio}>
-                        <Text style={styles.resetButtonText}>🔄 Reset Portfolio</Text>
-                    </TouchableOpacity>
+                    {/* Action Buttons */}
+                    <View style={styles.actionButtons}>
+                        {/* Export Button */}
+                        <TouchableOpacity
+                            style={[styles.actionButton, styles.exportActionButton]}
+                            onPress={handleExportHistory}
+                            disabled={isExporting || portfolio.tradeHistory.length === 0}
+                        >
+                            {isExporting ? (
+                                <ActivityIndicator size="small" color="#00E5FF" />
+                            ) : (
+                                <Text style={styles.exportActionText}>📤 Export Trade History</Text>
+                            )}
+                        </TouchableOpacity>
+
+                        {/* Reset Button */}
+                        <TouchableOpacity
+                            style={styles.resetButton}
+                            onPress={handleResetPortfolio}
+                        >
+                            <Text style={styles.resetButtonText}>🔄 Reset Portfolio</Text>
+                        </TouchableOpacity>
+                    </View>
                 </ScrollView>
             )}
 
             {/* History View */}
             {activeSubTab === 'history' && (
-                <TradeHistory trades={portfolio.tradeHistory} />
+                <View style={styles.historyContainer}>
+                    <TradeHistory trades={portfolio.tradeHistory} />
+
+                    {/* Export button at bottom of history */}
+                    {portfolio.tradeHistory.length > 0 && (
+                        <TouchableOpacity
+                            style={[styles.historyExportButton, isExporting && { opacity: 0.5 }]}
+                            onPress={handleExportHistory}
+                            disabled={isExporting}
+                        >
+                            {isExporting ? (
+                                <ActivityIndicator size="small" color="#00E5FF" />
+                            ) : (
+                                <Text style={styles.historyExportText}>📤 Export as CSV</Text>
+                            )}
+                        </TouchableOpacity>
+                    )}
+                </View>
             )}
 
             {/* Sell Modal */}
@@ -271,6 +360,9 @@ const styles = StyleSheet.create({
     scrollView: {
         flex: 1,
     },
+    historyContainer: {
+        flex: 1,
+    },
     emptyContainer: {
         flex: 1,
         alignItems: 'center',
@@ -293,19 +385,55 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         lineHeight: 22,
     },
-    resetButton: {
-        marginHorizontal: 16,
+    // Action Buttons
+    actionButtons: {
         marginTop: 20,
         marginBottom: 30,
+        gap: 10,
+    },
+    actionButton: {
+        marginHorizontal: 16,
         paddingVertical: 12,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    exportActionButton: {
+        backgroundColor: 'rgba(0, 229, 255, 0.1)',
+        borderWidth: 1,
+        borderColor: 'rgba(0, 229, 255, 0.3)',
+    },
+    exportActionText: {
+        fontSize: 13,
+        color: '#00E5FF',
+        fontWeight: '600',
+    },
+    resetButton: {
+        marginHorizontal: 16,
+        paddingVertical: 12,
+        backgroundColor: 'rgba(255, 82, 82, 0.08)',
         borderRadius: 10,
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: 'rgba(255, 82, 82, 0.2)',
     },
     resetButtonText: {
         fontSize: 13,
-        color: 'rgba(255, 255, 255, 0.5)',
+        color: 'rgba(255, 82, 82, 0.7)',
+        fontWeight: '600',
+    },
+    historyExportButton: {
+        marginHorizontal: 16,
+        marginVertical: 10,
+        paddingVertical: 12,
+        backgroundColor: 'rgba(0, 229, 255, 0.1)',
+        borderRadius: 10,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(0, 229, 255, 0.3)',
+    },
+    historyExportText: {
+        fontSize: 13,
+        color: '#00E5FF',
+        fontWeight: '600',
     },
 });

@@ -1,0 +1,79 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: CamarillaScreener/package-lock.json
+        
+    - name: Setup JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+        
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      
+    - name: Install dependencies
+      working-directory: CamarillaScreener
+      run: npm ci
+      
+    - name: Install Expo CLI
+      run: npm install -g expo-cli eas-cli @expo/ngrok@^4.1.0
+      
+    - name: Run Expo prebuild
+      working-directory: CamarillaScreener
+      run: npx expo prebuild --platform android --clean
+      
+    - name: Create assets directory
+      working-directory: CamarillaScreener
+      run: mkdir -p android/app/src/main/assets
+      
+    - name: Bundle JavaScript for Android
+      working-directory: CamarillaScreener
+      run: |
+        npx expo export:embed \
+          --platform android \
+          --entry-file node_modules/expo/AppEntry.js \
+          --bundle-output android/app/src/main/assets/index.android.bundle \
+          --assets-dest android/app/src/main/res \
+          --dev false \
+          --reset-cache
+        
+    - name: Build Release APK
+      working-directory: CamarillaScreener/android
+      run: ./gradlew assembleRelease
+      
+    - name: Find and rename APK
+      working-directory: CamarillaScreener
+      run: |
+        APK_PATH=$(find . -name "*-release*.apk" -type f | head -1)
+        if [ -z "$APK_PATH" ]; then
+          APK_PATH=$(find . -name "*.apk" -type f | head -1)
+        fi
+        echo "Found APK at: $APK_PATH"
+        mkdir -p ./output
+        cp "$APK_PATH" ./output/sajalstonks.apk
+        ls -la ./output/
+        
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: sajalstonks-apk
+        path: CamarillaScreener/output/sajalstonks.apk
+        if-no-files-found: error

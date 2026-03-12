@@ -18,7 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { StockData, TabType, StockComment, GroupBy } from './src/types';
 import { Portfolio, createEmptyPortfolio } from './src/types/trading';
-import { StockListItem, StockDetailsModal, ScanProgress, CommentsList, SectorHeader, SearchBar, RangeFilter, TradingTab, TradeModal } from './src/components';
+import { StockListItem, StockDetailsModal, ScanProgress, CommentsList, SectorHeader, SearchBar, RangeFilter, TradingTab, TradeModal, VolumeShockersTab } from './src/components';
 import { scanAllStocks, groupStocksBySector } from './src/services/api';
 import { saveScanResults, loadCachedResults, getCacheTimestamp, getStocksWithComments } from './src/services/storage';
 import { loadPortfolio, addPosition } from './src/services/tradingStorage';
@@ -285,6 +285,14 @@ export default function App() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={[styles.tab, activeTab === 'volume' && styles.activeTab]}
+            onPress={() => setActiveTab('volume')}
+          >
+            <Text style={[styles.tabText, activeTab === 'volume' && styles.activeTabText]}>
+              🔥 Volume
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.tab, activeTab === 'comments' && styles.activeTab]}
             onPress={() => setActiveTab('comments')}
           >
@@ -450,6 +458,11 @@ export default function App() {
             stocksWithComments={stocksWithComments}
             onStockPress={handleStockPress}
           />
+        )}
+
+        {/* Volume Shockers Tab Content */}
+        {activeTab === 'volume' && (
+          <VolumeShockersTab />
         )}
 
         {/* Trading Tab Content */}

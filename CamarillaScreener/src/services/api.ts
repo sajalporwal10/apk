@@ -1,7 +1,7 @@
 // API Services for fetching NIFTY 500 symbols and stock data
 // Optimized with parallel batch processing for faster scanning
 
-import { StockData, YahooChartResponse, SymbolInfo } from '../types';
+import { StockData, VolumeShockerData, YahooChartResponse, SymbolInfo } from '../types';
 import { computeR3S3, computePctRange, getLastCompletedMonth, formatDate } from '../utils/calculations';
 
 const NIFTY500_CSV_URL = 'https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv';
@@ -396,4 +396,155 @@ export async function fetchCurrentPrice(ticker: string): Promise<number | null> 
         return null;
     }
 }
+
+/**
+ * Fetch daily volume data for a single stock (last 10 trading days)
+ * Returns today's volume + last week's volume data
+ */
+async function fetchDailyVolumeData(ticker: string): Promise<{
+    todayVolume: number;
+    weekTotalVolume: number;
+    weekAvgVolume: number;
+    close: number;
+    prevClose: number;
+} | null> {
+    try {
+        const formattedTicker = ticker.endsWith('.NS') ? ticker : `${ticker}.NS`;
+
+        // Fetch last 15 days to ensure we get enough trading days
+        const now = Math.floor(Date.now() / 1000);
+        const fifteenDaysAgo = now - (15 * 24 * 60 * 60);
+
+        const url = `${YAHOO_CHART_BASE}/${formattedTicker}?interval=1d&period1=${fifteenDaysAgo}&period2=${now}`;
+
+        const response = await fetchWithTimeout(url, REQUEST_TIMEOUT);
+
+        if (!response.ok) {
+            return null;
+        }
+
+        const data: YahooChartResponse = await response.json();
+
+        if (!data.chart.result || data.chart.result.length === 0) {
+            return null;
+        }
+
+        const result = data.chart.result[0];
+        const quote = result.indicators.quote[0];
+
+        if (!quote || !quote.volume || quote.volume.length < 2) {
+            return null;
+        }
+
+        // Filter out null/zero volume days
+        const validDays: { volume: number; close: number }[] = [];
+        for (let i = 0; i < quote.volume.length; i++) {
+            if (quote.volume[i] && quote.volume[i] > 0 && quote.close[i] !== null) {
+                validDays.push({
+                    volume: quote.volume[i],
+                    close: quote.close[i],
+                });
+            }
+        }
+
+        if (validDays.length < 6) {
+            // Need at least today + 5 previous days
+            return null;
+        }
+
+        // Last entry = today (or most recent), previous 5 = last week
+        const todayData = validDays[validDays.length - 1];
+        const prevClose = validDays[validDays.length - 2].close;
+
+        // Sum up the previous 5 trading days (the "week")
+        const weekDays = validDays.slice(Math.max(0, validDays.length - 6), validDays.length - 1);
+        const weekTotalVolume = weekDays.reduce((sum, d) => sum + d.volume, 0);
+        const weekAvgVolume = weekTotalVolume / weekDays.length;
+
+        return {
+            todayVolume: todayData.volume,
+            weekTotalVolume,
+            weekAvgVolume,
+            close: Math.round(todayData.close * 100) / 100,
+            prevClose: Math.round(prevClose * 100) / 100,
+        };
+    } catch (error) {
+        return null;
+    }
+}
+
+/**
+ * Process a batch of stocks for volume data
+ */
+async function processVolumeBatch(symbolInfos: SymbolInfo[]): Promise<VolumeShockerData[]> {
+    const promises = symbolInfos.map(async (info) => {
+        const volumeData = await fetchDailyVolumeData(info.symbol);
+
+        if (!volumeData) return null;
+
+        const { todayVolume, weekTotalVolume, weekAvgVolume, close, prevClose } = volumeData;
+
+        // Only include if today's volume > last week's combined volume
+        if (todayVolume <= weekTotalVolume) return null;
+
+        const volumePct = (todayVolume / weekTotalVolume) * 100;
+        const priceChange = prevClose > 0 ? ((close - prevClose) / prevClose) * 100 : 0;
+
+        return {
+            ticker: info.symbol,
+            companyName: info.companyName,
+            sector: info.sector || 'Other',
+            close,
+            todayVolume,
+            weekTotalVolume,
+            weekAvgVolume,
+            volumePct: Math.round(volumePct),
+            priceChange: Math.round(priceChange * 100) / 100,
+        } as VolumeShockerData;
+    });
+
+    const results = await Promise.all(promises);
+    return results.filter((r): r is VolumeShockerData => r !== null);
+}
+
+/**
+ * Scan all NIFTY 500 stocks for volume shockers
+ * A volume shocker = today's volume > last week's combined volume
+ */
+export async function scanVolumeShockers(
+    onProgress: (current: number, total: number, ticker: string) => void,
+    shouldCancel: () => boolean
+): Promise<VolumeShockerData[]> {
+    const symbolInfos = await fetchNifty500Symbols();
+    const results: VolumeShockerData[] = [];
+    const total = symbolInfos.length;
+
+    // Process in batches
+    for (let i = 0; i < symbolInfos.length; i += BATCH_SIZE) {
+        if (shouldCancel()) {
+            break;
+        }
+
+        const batch = symbolInfos.slice(i, i + BATCH_SIZE);
+        const batchTickers = batch.map(s => s.symbol.replace('.NS', '')).join(', ');
+
+        // Update progress
+        onProgress(Math.min(i + BATCH_SIZE, total), total, batchTickers);
+
+        // Process batch in parallel
+        const batchResults = await processVolumeBatch(batch);
+        results.push(...batchResults);
+
+        // Delay between batches to avoid rate limiting
+        if (i + BATCH_SIZE < symbolInfos.length && !shouldCancel()) {
+            await sleep(BATCH_DELAY);
+        }
+    }
+
+    // Sort by volumePct descending (highest volume shock first)
+    results.sort((a, b) => b.volumePct - a.volumePct);
+
+    return results;
+}
+
 

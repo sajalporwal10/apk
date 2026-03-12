@@ -16,6 +16,19 @@ export interface StockData {
     error: string;
 }
 
+// Volume Shocker data for stocks with unusual volume
+export interface VolumeShockerData {
+    ticker: string;
+    companyName: string;
+    sector: string;
+    close: number;
+    todayVolume: number;       // Today's volume
+    weekTotalVolume: number;   // Sum of last 5 trading days' volume (excluding today)
+    weekAvgVolume: number;     // Average daily volume over the last week
+    volumePct: number;         // (todayVolume / weekTotalVolume) * 100
+    priceChange: number;       // Today's price change percentage
+}
+
 export interface StockComment {
     ticker: string;
     comment: string;
@@ -41,7 +54,7 @@ export interface CachedComments {
 
 export type RangeFilter = 'under5' | 'between5and6.5';
 
-export type TabType = 'screener' | 'trading' | 'comments';
+export type TabType = 'screener' | 'trading' | 'comments' | 'volume';
 
 export type GroupBy = 'none' | 'sector';
 

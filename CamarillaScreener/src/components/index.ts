@@ -11,3 +11,6 @@ export { PositionCard } from './PositionCard';
 export { TradeModal } from './TradeModal';
 export { TradeHistory } from './TradeHistory';
 export { TradingTab } from './TradingTab';
+export { VolumeShockerItem } from './VolumeShockerItem';
+export { VolumeShockersTab } from './VolumeShockersTab';
+
