@@ -1,10 +1,11 @@
 // Local storage service for caching scan results and comments
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { StockData, CachedScanResult, StockComment, CachedComments } from '../types';
+import { StockData, VolumeShockerData, CachedScanResult, StockComment, CachedComments } from '../types';
 
 const CACHE_KEY = '@sajalstonks_scan_results';
 const COMMENTS_KEY = '@sajalstonks_comments';
+const VOLUME_CACHE_KEY = '@sajalstonks_volume_shockers';
 const CACHE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /**
@@ -155,3 +156,52 @@ export async function getStocksWithComments(stocks: StockData[]): Promise<(Stock
         return [];
     }
 }
+
+// ==================== VOLUME SHOCKERS CACHE ====================
+
+/**
+ * Save volume shockers results to local storage
+ */
+export async function saveVolumeShockers(data: VolumeShockerData[]): Promise<void> {
+    try {
+        const cacheData = {
+            timestamp: Date.now(),
+            data
+        };
+        await AsyncStorage.setItem(VOLUME_CACHE_KEY, JSON.stringify(cacheData));
+    } catch (error) {
+        console.error('Error saving volume shockers:', error);
+    }
+}
+
+/**
+ * Load cached volume shockers from local storage
+ */
+export async function loadCachedVolumeShockers(): Promise<VolumeShockerData[] | null> {
+    try {
+        const cached = await AsyncStorage.getItem(VOLUME_CACHE_KEY);
+        if (!cached) return null;
+
+        const parsed = JSON.parse(cached);
+        return parsed.data || null;
+    } catch (error) {
+        console.error('Error loading cached volume shockers:', error);
+        return null;
+    }
+}
+
+/**
+ * Get volume cache timestamp
+ */
+export async function getVolumeCacheTimestamp(): Promise<Date | null> {
+    try {
+        const cached = await AsyncStorage.getItem(VOLUME_CACHE_KEY);
+        if (!cached) return null;
+
+        const parsed = JSON.parse(cached);
+        return new Date(parsed.timestamp);
+    } catch (error) {
+        return null;
+    }
+}
+

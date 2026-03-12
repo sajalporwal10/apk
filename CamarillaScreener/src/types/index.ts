@@ -27,6 +27,7 @@ export interface VolumeShockerData {
     weekAvgVolume: number;     // Average daily volume over the last week
     volumePct: number;         // (todayVolume / weekTotalVolume) * 100
     priceChange: number;       // Today's price change percentage
+    pctRangeR3: number | null; // Camarilla R3-S3 range percentage
 }
 
 export interface StockComment {

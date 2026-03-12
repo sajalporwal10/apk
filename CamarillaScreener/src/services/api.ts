@@ -398,8 +398,8 @@ export async function fetchCurrentPrice(ticker: string): Promise<number | null> 
 }
 
 /**
- * Fetch daily volume data for a single stock (last 10 trading days)
- * Returns today's volume + last week's volume data
+ * Fetch daily volume data for a single stock (last ~30 trading days)
+ * Returns today's volume, last week's volume data, and monthly high/low for R3-S3 calc
  */
 async function fetchDailyVolumeData(ticker: string): Promise<{
     todayVolume: number;
@@ -407,15 +407,18 @@ async function fetchDailyVolumeData(ticker: string): Promise<{
     weekAvgVolume: number;
     close: number;
     prevClose: number;
+    monthlyHigh: number;
+    monthlyLow: number;
+    monthlyClose: number;
 } | null> {
     try {
         const formattedTicker = ticker.endsWith('.NS') ? ticker : `${ticker}.NS`;
 
-        // Fetch last 15 days to ensure we get enough trading days
+        // Fetch last 35 days to get enough data for both volume + monthly range
         const now = Math.floor(Date.now() / 1000);
-        const fifteenDaysAgo = now - (15 * 24 * 60 * 60);
+        const thirtyFiveDaysAgo = now - (35 * 24 * 60 * 60);
 
-        const url = `${YAHOO_CHART_BASE}/${formattedTicker}?interval=1d&period1=${fifteenDaysAgo}&period2=${now}`;
+        const url = `${YAHOO_CHART_BASE}/${formattedTicker}?interval=1d&period1=${thirtyFiveDaysAgo}&period2=${now}`;
 
         const response = await fetchWithTimeout(url, REQUEST_TIMEOUT);
 
@@ -437,12 +440,15 @@ async function fetchDailyVolumeData(ticker: string): Promise<{
         }
 
         // Filter out null/zero volume days
-        const validDays: { volume: number; close: number }[] = [];
+        const validDays: { volume: number; close: number; high: number; low: number }[] = [];
         for (let i = 0; i < quote.volume.length; i++) {
-            if (quote.volume[i] && quote.volume[i] > 0 && quote.close[i] !== null) {
+            if (quote.volume[i] && quote.volume[i] > 0 && quote.close[i] !== null
+                && quote.high[i] !== null && quote.low[i] !== null) {
                 validDays.push({
                     volume: quote.volume[i],
                     close: quote.close[i],
+                    high: quote.high[i],
+                    low: quote.low[i],
                 });
             }
         }
@@ -461,12 +467,23 @@ async function fetchDailyVolumeData(ticker: string): Promise<{
         const weekTotalVolume = weekDays.reduce((sum, d) => sum + d.volume, 0);
         const weekAvgVolume = weekTotalVolume / weekDays.length;
 
+        // Compute monthly high/low from all available days (for R3-S3)
+        let monthlyHigh = -Infinity;
+        let monthlyLow = Infinity;
+        for (const day of validDays) {
+            if (day.high > monthlyHigh) monthlyHigh = day.high;
+            if (day.low < monthlyLow) monthlyLow = day.low;
+        }
+
         return {
             todayVolume: todayData.volume,
             weekTotalVolume,
             weekAvgVolume,
             close: Math.round(todayData.close * 100) / 100,
             prevClose: Math.round(prevClose * 100) / 100,
+            monthlyHigh,
+            monthlyLow,
+            monthlyClose: todayData.close,
         };
     } catch (error) {
         return null;
@@ -482,13 +499,20 @@ async function processVolumeBatch(symbolInfos: SymbolInfo[]): Promise<VolumeShoc
 
         if (!volumeData) return null;
 
-        const { todayVolume, weekTotalVolume, weekAvgVolume, close, prevClose } = volumeData;
+        const { todayVolume, weekTotalVolume, weekAvgVolume, close, prevClose, monthlyHigh, monthlyLow, monthlyClose } = volumeData;
 
         // Only include if today's volume > last week's combined volume
         if (todayVolume <= weekTotalVolume) return null;
 
         const volumePct = (todayVolume / weekTotalVolume) * 100;
         const priceChange = prevClose > 0 ? ((close - prevClose) / prevClose) * 100 : 0;
+
+        // Compute Camarilla R3-S3 range percentage
+        let pctRangeR3: number | null = null;
+        if (monthlyHigh > 0 && monthlyLow > 0 && monthlyClose > 0) {
+            const { r3, s3 } = computeR3S3(monthlyHigh, monthlyLow, monthlyClose);
+            pctRangeR3 = computePctRange(r3, s3);
+        }
 
         return {
             ticker: info.symbol,
@@ -500,6 +524,7 @@ async function processVolumeBatch(symbolInfos: SymbolInfo[]): Promise<VolumeShoc
             weekAvgVolume,
             volumePct: Math.round(volumePct),
             priceChange: Math.round(priceChange * 100) / 100,
+            pctRangeR3,
         } as VolumeShockerData;
     });
 

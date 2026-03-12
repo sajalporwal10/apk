@@ -1,7 +1,8 @@
 // Volume Shockers Tab - Dedicated tab for volume anomaly detection
 // Only scans when the user explicitly presses the scan button
+// Results are cached in AsyncStorage for persistence
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
     View,
     Text,
@@ -14,6 +15,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { VolumeShockerData } from '../types';
 import { scanVolumeShockers } from '../services/api';
+import { saveVolumeShockers, loadCachedVolumeShockers, getVolumeCacheTimestamp } from '../services/storage';
 import { VolumeShockerItem } from './VolumeShockerItem';
 import { ScanProgress } from './ScanProgress';
 
@@ -22,11 +24,35 @@ interface VolumeShockersTabProps { }
 export const VolumeShockersTab: React.FC<VolumeShockersTabProps> = () => {
     const [shockers, setShockers] = useState<VolumeShockerData[]>([]);
     const [isScanning, setIsScanning] = useState(false);
+    const [isLoadingCache, setIsLoadingCache] = useState(true);
     const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, ticker: '' });
     const [hasScanned, setHasScanned] = useState(false);
     const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
 
     const cancelRef = useRef(false);
+
+    // Load cached results on mount
+    useEffect(() => {
+        loadCachedData();
+    }, []);
+
+    const loadCachedData = async () => {
+        setIsLoadingCache(true);
+        try {
+            const cached = await loadCachedVolumeShockers();
+            const timestamp = await getVolumeCacheTimestamp();
+
+            if (cached && cached.length > 0) {
+                setShockers(cached);
+                setHasScanned(true);
+                setLastScanTime(timestamp);
+            }
+        } catch (error) {
+            console.error('Error loading cached volume shockers:', error);
+        } finally {
+            setIsLoadingCache(false);
+        }
+    };
 
     const handleStartScan = useCallback(async () => {
         if (isScanning) {
@@ -51,6 +77,9 @@ export const VolumeShockersTab: React.FC<VolumeShockersTabProps> = () => {
                 setHasScanned(true);
                 setLastScanTime(new Date());
 
+                // Save to cache
+                await saveVolumeShockers(results);
+
                 Alert.alert(
                     'Scan Complete 🔥',
                     `Found ${results.length} volume shockers from NIFTY 500`,
@@ -72,7 +101,9 @@ export const VolumeShockersTab: React.FC<VolumeShockersTabProps> = () => {
 
     const formatScanTime = (date: Date | null): string => {
         if (!date) return '';
-        return date.toLocaleTimeString('en-IN', {
+        return date.toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: 'short',
             hour: '2-digit',
             minute: '2-digit',
         });
@@ -126,8 +157,16 @@ export const VolumeShockersTab: React.FC<VolumeShockersTabProps> = () => {
                 />
             )}
 
+            {/* Loading cached data */}
+            {isLoadingCache && !isScanning && (
+                <View style={styles.emptyContainer}>
+                    <ActivityIndicator size="large" color="#FF9100" />
+                    <Text style={styles.loadingText}>Loading cached results...</Text>
+                </View>
+            )}
+
             {/* Results List */}
-            {!isScanning && hasScanned && shockers.length > 0 && (
+            {!isScanning && !isLoadingCache && hasScanned && shockers.length > 0 && (
                 <FlatList
                     data={shockers}
                     keyExtractor={(item) => item.ticker}
@@ -140,7 +179,7 @@ export const VolumeShockersTab: React.FC<VolumeShockersTabProps> = () => {
             )}
 
             {/* Empty State - Before First Scan */}
-            {!isScanning && !hasScanned && (
+            {!isScanning && !isLoadingCache && !hasScanned && (
                 <View style={styles.emptyContainer}>
                     <Text style={styles.emptyIcon}>📊</Text>
                     <Text style={styles.emptyTitle}>No Data Yet</Text>
@@ -153,7 +192,7 @@ export const VolumeShockersTab: React.FC<VolumeShockersTabProps> = () => {
             )}
 
             {/* Empty State - No Shockers Found */}
-            {!isScanning && hasScanned && shockers.length === 0 && (
+            {!isScanning && !isLoadingCache && hasScanned && shockers.length === 0 && (
                 <View style={styles.emptyContainer}>
                     <Text style={styles.emptyIcon}>😴</Text>
                     <Text style={styles.emptyTitle}>No Shockers Today</Text>
@@ -232,6 +271,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         padding: 40,
+    },
+    loadingText: {
+        color: 'rgba(255, 255, 255, 0.6)',
+        fontSize: 15,
+        marginTop: 16,
     },
     emptyIcon: {
         fontSize: 64,

@@ -88,6 +88,12 @@ export const VolumeShockerItem: React.FC<VolumeShockerItemProps> = ({ stock, onP
                         {priceChangeSign}{stock.priceChange}%
                     </Text>
                 </View>
+                {stock.pctRangeR3 !== null && stock.pctRangeR3 !== undefined && (
+                    <View style={styles.rangePill}>
+                        <Text style={styles.rangeLabel}>R3-S3</Text>
+                        <Text style={styles.rangeValue}>{stock.pctRangeR3.toFixed(1)}%</Text>
+                    </View>
+                )}
                 <View style={styles.sectorPill}>
                     <Text style={styles.sectorText} numberOfLines={1}>
                         {stock.sector || 'Other'}
@@ -197,6 +203,27 @@ const styles = StyleSheet.create({
     },
     priceChange: {
         fontSize: 12,
+        fontWeight: '700',
+    },
+    rangePill: {
+        backgroundColor: 'rgba(0, 229, 255, 0.12)',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        borderWidth: 1,
+        borderColor: 'rgba(0, 229, 255, 0.2)',
+    },
+    rangeLabel: {
+        fontSize: 10,
+        color: 'rgba(0, 229, 255, 0.7)',
+        fontWeight: '600',
+    },
+    rangeValue: {
+        fontSize: 12,
+        color: '#00E5FF',
         fontWeight: '700',
     },
     sectorPill: {
