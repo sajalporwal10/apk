@@ -460,10 +460,10 @@ export default function App() {
           />
         )}
 
-        {/* Volume Shockers Tab Content */}
-        {activeTab === 'volume' && (
+        {/* Volume Shockers Tab Content - Always mounted so scans continue when switching tabs */}
+        <View style={activeTab === 'volume' ? { flex: 1 } : { height: 0, overflow: 'hidden', position: 'absolute', width: 0 }}>
           <VolumeShockersTab />
-        )}
+        </View>
 
         {/* Trading Tab Content */}
         {activeTab === 'trading' && (

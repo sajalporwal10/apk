@@ -29,6 +29,19 @@ export const VolumeShockersTab: React.FC<VolumeShockersTabProps> = () => {
     const [hasScanned, setHasScanned] = useState(false);
     const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
 
+    // Compute min/max R3-S3 range from results
+    const rangeStats = React.useMemo(() => {
+        if (shockers.length === 0) return null;
+        const ranges = shockers
+            .filter(s => s.pctRangeR3 !== null && s.pctRangeR3 !== undefined)
+            .map(s => s.pctRangeR3 as number);
+        if (ranges.length === 0) return null;
+        return {
+            min: Math.min(...ranges),
+            max: Math.max(...ranges),
+        };
+    }, [shockers]);
+
     const cancelRef = useRef(false);
 
     // Load cached results on mount
@@ -82,7 +95,7 @@ export const VolumeShockersTab: React.FC<VolumeShockersTabProps> = () => {
 
                 Alert.alert(
                     'Scan Complete 🔥',
-                    `Found ${results.length} volume shockers from NIFTY 500`,
+                    `Found ${results.length} volume shockers from screener-qualified stocks (R3-S3 < 6.5%)`,
                     [{ text: 'OK' }]
                 );
             }
@@ -126,6 +139,11 @@ export const VolumeShockersTab: React.FC<VolumeShockersTabProps> = () => {
                                 ? `Last scan: ${formatScanTime(lastScanTime)}`
                                 : "Today's vol > Last week's combined"}
                         </Text>
+                        {hasScanned && rangeStats && (
+                            <Text style={styles.rangeInfo}>
+                                📏 R3-S3 Range: {rangeStats.min.toFixed(1)}% - {rangeStats.max.toFixed(1)}%
+                            </Text>
+                        )}
                     </View>
                 </View>
             </View>
@@ -240,6 +258,12 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: 'rgba(255, 255, 255, 0.5)',
         marginTop: 2,
+    },
+    rangeInfo: {
+        fontSize: 11,
+        color: '#00E5FF',
+        marginTop: 3,
+        fontWeight: '600',
     },
     scanButtonContainer: {
         marginHorizontal: 16,

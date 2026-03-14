@@ -398,8 +398,8 @@ export async function fetchCurrentPrice(ticker: string): Promise<number | null> 
 }
 
 /**
- * Fetch daily volume data for a single stock (last ~30 trading days)
- * Returns today's volume, last week's volume data, and monthly high/low for R3-S3 calc
+ * Fetch daily volume data for a single stock (last ~10 trading days)
+ * Returns today's volume, last week's volume data
  */
 async function fetchDailyVolumeData(ticker: string): Promise<{
     todayVolume: number;
@@ -407,18 +407,15 @@ async function fetchDailyVolumeData(ticker: string): Promise<{
     weekAvgVolume: number;
     close: number;
     prevClose: number;
-    monthlyHigh: number;
-    monthlyLow: number;
-    monthlyClose: number;
 } | null> {
     try {
         const formattedTicker = ticker.endsWith('.NS') ? ticker : `${ticker}.NS`;
 
-        // Fetch last 35 days to get enough data for both volume + monthly range
+        // Fetch last 15 days to get enough data for volume comparison
         const now = Math.floor(Date.now() / 1000);
-        const thirtyFiveDaysAgo = now - (35 * 24 * 60 * 60);
+        const fifteenDaysAgo = now - (15 * 24 * 60 * 60);
 
-        const url = `${YAHOO_CHART_BASE}/${formattedTicker}?interval=1d&period1=${thirtyFiveDaysAgo}&period2=${now}`;
+        const url = `${YAHOO_CHART_BASE}/${formattedTicker}?interval=1d&period1=${fifteenDaysAgo}&period2=${now}`;
 
         const response = await fetchWithTimeout(url, REQUEST_TIMEOUT);
 
@@ -440,15 +437,12 @@ async function fetchDailyVolumeData(ticker: string): Promise<{
         }
 
         // Filter out null/zero volume days
-        const validDays: { volume: number; close: number; high: number; low: number }[] = [];
+        const validDays: { volume: number; close: number }[] = [];
         for (let i = 0; i < quote.volume.length; i++) {
-            if (quote.volume[i] && quote.volume[i] > 0 && quote.close[i] !== null
-                && quote.high[i] !== null && quote.low[i] !== null) {
+            if (quote.volume[i] && quote.volume[i] > 0 && quote.close[i] !== null) {
                 validDays.push({
                     volume: quote.volume[i],
                     close: quote.close[i],
-                    high: quote.high[i],
-                    low: quote.low[i],
                 });
             }
         }
@@ -467,23 +461,12 @@ async function fetchDailyVolumeData(ticker: string): Promise<{
         const weekTotalVolume = weekDays.reduce((sum, d) => sum + d.volume, 0);
         const weekAvgVolume = weekTotalVolume / weekDays.length;
 
-        // Compute monthly high/low from all available days (for R3-S3)
-        let monthlyHigh = -Infinity;
-        let monthlyLow = Infinity;
-        for (const day of validDays) {
-            if (day.high > monthlyHigh) monthlyHigh = day.high;
-            if (day.low < monthlyLow) monthlyLow = day.low;
-        }
-
         return {
             todayVolume: todayData.volume,
             weekTotalVolume,
             weekAvgVolume,
             close: Math.round(todayData.close * 100) / 100,
             prevClose: Math.round(prevClose * 100) / 100,
-            monthlyHigh,
-            monthlyLow,
-            monthlyClose: todayData.close,
         };
     } catch (error) {
         return null;
@@ -491,28 +474,30 @@ async function fetchDailyVolumeData(ticker: string): Promise<{
 }
 
 /**
- * Process a batch of stocks for volume data
+ * Pre-computed monthly pivot data for a stock
  */
-async function processVolumeBatch(symbolInfos: SymbolInfo[]): Promise<VolumeShockerData[]> {
-    const promises = symbolInfos.map(async (info) => {
+interface MonthlyPivotData {
+    symbolInfo: SymbolInfo;
+    pctRangeR3: number;
+}
+
+/**
+ * Process a batch of stocks for volume data (only pre-qualified stocks)
+ * Accepts pre-computed monthly R3-S3 data so we use the correct Camarilla pivots
+ */
+async function processVolumeBatch(pivotDataList: MonthlyPivotData[]): Promise<VolumeShockerData[]> {
+    const promises = pivotDataList.map(async ({ symbolInfo: info, pctRangeR3 }) => {
         const volumeData = await fetchDailyVolumeData(info.symbol);
 
         if (!volumeData) return null;
 
-        const { todayVolume, weekTotalVolume, weekAvgVolume, close, prevClose, monthlyHigh, monthlyLow, monthlyClose } = volumeData;
+        const { todayVolume, weekTotalVolume, weekAvgVolume, close, prevClose } = volumeData;
 
         // Only include if today's volume > last week's combined volume
         if (todayVolume <= weekTotalVolume) return null;
 
         const volumePct = (todayVolume / weekTotalVolume) * 100;
         const priceChange = prevClose > 0 ? ((close - prevClose) / prevClose) * 100 : 0;
-
-        // Compute Camarilla R3-S3 range percentage
-        let pctRangeR3: number | null = null;
-        if (monthlyHigh > 0 && monthlyLow > 0 && monthlyClose > 0) {
-            const { r3, s3 } = computeR3S3(monthlyHigh, monthlyLow, monthlyClose);
-            pctRangeR3 = computePctRange(r3, s3);
-        }
 
         return {
             ticker: info.symbol,
@@ -534,34 +519,70 @@ async function processVolumeBatch(symbolInfos: SymbolInfo[]): Promise<VolumeShoc
 
 /**
  * Scan all NIFTY 500 stocks for volume shockers
- * A volume shocker = today's volume > last week's combined volume
+ * Phase 1: Fetch monthly OHLC for all stocks & filter by R3-S3 < 6.5% (same as screener)
+ * Phase 2: For qualifying stocks, check if today's volume > last week's combined volume
  */
 export async function scanVolumeShockers(
     onProgress: (current: number, total: number, ticker: string) => void,
     shouldCancel: () => boolean
 ): Promise<VolumeShockerData[]> {
     const symbolInfos = await fetchNifty500Symbols();
-    const results: VolumeShockerData[] = [];
-    const total = symbolInfos.length;
+    const totalSymbols = symbolInfos.length;
 
-    // Process in batches
+    // ── Phase 1: Monthly OHLC scan to find stocks with R3-S3 < 6.5% ──
+    const qualifiedStocks: MonthlyPivotData[] = [];
+
     for (let i = 0; i < symbolInfos.length; i += BATCH_SIZE) {
-        if (shouldCancel()) {
-            break;
-        }
+        if (shouldCancel()) break;
 
         const batch = symbolInfos.slice(i, i + BATCH_SIZE);
         const batchTickers = batch.map(s => s.symbol.replace('.NS', '')).join(', ');
 
-        // Update progress
-        onProgress(Math.min(i + BATCH_SIZE, total), total, batchTickers);
+        // Show Phase 1 progress
+        onProgress(Math.min(i + BATCH_SIZE, totalSymbols), totalSymbols, `[Phase 1] ${batchTickers}`);
 
-        // Process batch in parallel
+        // Fetch monthly OHLC in parallel for this batch
+        const monthlyPromises = batch.map(async (info) => {
+            const ohlc = await fetchMonthlyOHLC(info.symbol);
+            if (!ohlc) return null;
+
+            const { r3, s3 } = computeR3S3(ohlc.high, ohlc.low, ohlc.close);
+            const pctRange = computePctRange(r3, s3);
+
+            if (pctRange === null || pctRange >= MAX_PCT_RANGE) return null;
+
+            return { symbolInfo: info, pctRangeR3: pctRange } as MonthlyPivotData;
+        });
+
+        const batchResults = await Promise.all(monthlyPromises);
+        for (const result of batchResults) {
+            if (result) qualifiedStocks.push(result);
+        }
+
+        if (i + BATCH_SIZE < symbolInfos.length && !shouldCancel()) {
+            await sleep(BATCH_DELAY);
+        }
+    }
+
+    if (shouldCancel()) return [];
+
+    // ── Phase 2: Volume check on qualified stocks only ──
+    const results: VolumeShockerData[] = [];
+    const totalQualified = qualifiedStocks.length;
+
+    for (let i = 0; i < qualifiedStocks.length; i += BATCH_SIZE) {
+        if (shouldCancel()) break;
+
+        const batch = qualifiedStocks.slice(i, i + BATCH_SIZE);
+        const batchTickers = batch.map(s => s.symbolInfo.symbol.replace('.NS', '')).join(', ');
+
+        // Show Phase 2 progress
+        onProgress(Math.min(i + BATCH_SIZE, totalQualified), totalQualified, `[Phase 2] ${batchTickers}`);
+
         const batchResults = await processVolumeBatch(batch);
         results.push(...batchResults);
 
-        // Delay between batches to avoid rate limiting
-        if (i + BATCH_SIZE < symbolInfos.length && !shouldCancel()) {
+        if (i + BATCH_SIZE < qualifiedStocks.length && !shouldCancel()) {
             await sleep(BATCH_DELAY);
         }
     }
