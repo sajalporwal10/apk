@@ -55,7 +55,7 @@ export interface CachedComments {
 
 export type RangeFilter = 'under5' | 'between5and6.5';
 
-export type TabType = 'screener' | 'trading' | 'comments' | 'volume';
+export type TabType = 'screener' | 'trading' | 'comments' | 'volume' | 'opportunity';
 
 export type GroupBy = 'none' | 'sector';
 

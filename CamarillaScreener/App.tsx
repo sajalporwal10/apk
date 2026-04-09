@@ -18,7 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { StockData, TabType, StockComment, GroupBy } from './src/types';
 import { Portfolio, createEmptyPortfolio } from './src/types/trading';
-import { StockListItem, StockDetailsModal, ScanProgress, CommentsList, SectorHeader, SearchBar, RangeFilter, TradingTab, TradeModal, VolumeShockersTab } from './src/components';
+import { StockListItem, StockDetailsModal, ScanProgress, CommentsList, SectorHeader, SearchBar, RangeFilter, TradingTab, TradeModal, VolumeShockersTab, GoodOpportunityTab } from './src/components';
 import { scanAllStocks, groupStocksBySector } from './src/services/api';
 import { saveScanResults, loadCachedResults, getCacheTimestamp, getStocksWithComments } from './src/services/storage';
 import { loadPortfolio, addPosition } from './src/services/tradingStorage';
@@ -293,6 +293,14 @@ export default function App() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={[styles.tab, activeTab === 'opportunity' && styles.activeTab]}
+            onPress={() => setActiveTab('opportunity')}
+          >
+            <Text style={[styles.tabText, activeTab === 'opportunity' && styles.activeTabText]}>
+              🎯 Opp.
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.tab, activeTab === 'comments' && styles.activeTab]}
             onPress={() => setActiveTab('comments')}
           >
@@ -463,6 +471,11 @@ export default function App() {
         {/* Volume Shockers Tab Content - Always mounted so scans continue when switching tabs */}
         <View style={activeTab === 'volume' ? { flex: 1 } : { height: 0, overflow: 'hidden', position: 'absolute', width: 0 }}>
           <VolumeShockersTab />
+        </View>
+
+        {/* Good Opportunity Tab Content - Always mounted so scans continue when switching tabs */}
+        <View style={activeTab === 'opportunity' ? { flex: 1 } : { height: 0, overflow: 'hidden', position: 'absolute', width: 0 }}>
+          <GoodOpportunityTab />
         </View>
 
         {/* Trading Tab Content */}
