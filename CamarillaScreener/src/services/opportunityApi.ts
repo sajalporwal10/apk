@@ -6,7 +6,7 @@ import { fetchNifty500Symbols } from './api';
 import { SymbolInfo, YahooChartResponse } from '../types';
 
 const YAHOO_CHART_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
-const BATCH_SIZE = 8;
+const BATCH_SIZE = 20;
 const BATCH_DELAY = 800;
 const REQUEST_TIMEOUT = 10000;
 
@@ -108,8 +108,8 @@ async function fetchDailySurgeData(ticker: string): Promise<DailySurgeData | nul
     );
     const weekTotalVolume = weekDays.reduce((sum, d) => sum + d.volume, 0);
 
-    // Check: today's volume must exceed total of last 5 days
-    if (today.volume <= weekTotalVolume) return null;
+    // Check: today's volume must exceed 2× total of last 5 days
+    if (today.volume <= weekTotalVolume * 2) return null;
 
     const volumeMultiple = Math.round((today.volume / weekTotalVolume) * 100);
 

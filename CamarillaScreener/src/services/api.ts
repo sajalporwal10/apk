@@ -8,7 +8,7 @@ const NIFTY500_CSV_URL = 'https://www.niftyindices.com/IndexConstituent/ind_nift
 const YAHOO_CHART_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
 
 // Parallel batch configuration
-const BATCH_SIZE = 8; // Process 8 stocks simultaneously
+const BATCH_SIZE = 20; // Process 20 stocks simultaneously
 const BATCH_DELAY = 800; // Delay between batches (ms)
 const REQUEST_TIMEOUT = 10000; // 10 second timeout per request
 
