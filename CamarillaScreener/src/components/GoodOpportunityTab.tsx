@@ -1,5 +1,6 @@
 // GoodOpportunityTab - Main tab component for volume surge tracking
 // Scans Nifty 500 for volume surges, tracks stocks, and alerts buy zones
+// Supports paper trading with quantity tracking and live sell price from API
 
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
@@ -11,11 +12,14 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { OpportunityStock, OpportunityHistoryStats } from '../types/opportunity';
 import { scanGoodOpportunities, refreshTrackedPrices } from '../services/opportunityApi';
+import { fetchCurrentPrice } from '../services/api';
 import {
   loadOpportunities,
   saveOpportunities,
@@ -40,6 +44,12 @@ export const GoodOpportunityTab: React.FC = () => {
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [showStats, setShowStats] = useState(true);
+
+  // Paper trading modal state
+  const [buyModalVisible, setBuyModalVisible] = useState(false);
+  const [buyModalStock, setBuyModalStock] = useState<OpportunityStock | null>(null);
+  const [buyQuantity, setBuyQuantity] = useState('');
+  const [isFetchingSellPrice, setIsFetchingSellPrice] = useState(false);
 
   const cancelRef = useRef(false);
 
@@ -186,18 +196,118 @@ export const GoodOpportunityTab: React.FC = () => {
     }
   }, [stocks]);
 
-  // ─── Stock actions ─────────────────────────────────────────────
+  // ─── Stock actions (paper trading) ─────────────────────────────
 
-  const handleBuy = useCallback(async (stock: OpportunityStock) => {
-    const price = stock.currentPrice || stock.surgeClose;
-    const updated = await markAsBought(stock.id, price);
-    setStocks(updated);
+  // Open buy modal with quantity input
+  const handleBuy = useCallback((stock: OpportunityStock) => {
+    setBuyModalStock(stock);
+    setBuyQuantity('');
+    setBuyModalVisible(true);
   }, []);
 
-  const handleCloseTrade = useCallback(async (stock: OpportunityStock) => {
-    if (!stock.currentPrice) return;
-    const updated = await closeTrade(stock.id, stock.currentPrice);
+  // Confirm buy with quantity
+  const confirmBuy = useCallback(async () => {
+    if (!buyModalStock) return;
+
+    const qty = parseInt(buyQuantity, 10);
+    if (isNaN(qty) || qty <= 0) {
+      Alert.alert('Invalid Quantity', 'Please enter a valid number of shares.');
+      return;
+    }
+
+    const price = buyModalStock.currentPrice || buyModalStock.surgeClose;
+    const updated = await markAsBought(buyModalStock.id, price, qty);
     setStocks(updated);
+    setBuyModalVisible(false);
+    setBuyModalStock(null);
+
+    Alert.alert(
+      'Paper Trade Placed! 🛒',
+      `Bought ${qty} shares of ${buyModalStock.ticker.replace('.NS', '')} at ₹${price.toFixed(2)}\nTotal: ₹${(qty * price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
+      [{ text: 'OK' }]
+    );
+  }, [buyModalStock, buyQuantity]);
+
+  // Sell — fetch live price from API first, then confirm
+  const handleCloseTrade = useCallback(async (stock: OpportunityStock) => {
+    const ticker = stock.ticker.replace('.NS', '');
+
+    Alert.alert(
+      `Sell ${ticker}?`,
+      'Fetching live market price...',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Fetch Price & Sell',
+          onPress: async () => {
+            setIsFetchingSellPrice(true);
+            try {
+              const livePrice = await fetchCurrentPrice(stock.ticker);
+              setIsFetchingSellPrice(false);
+
+              if (livePrice === null) {
+                Alert.alert(
+                  'Price Fetch Failed',
+                  'Could not get live price. Use last known price?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: `Use ₹${(stock.currentPrice || stock.surgeClose).toFixed(2)}`,
+                      onPress: async () => {
+                        const sellPrice = stock.currentPrice || stock.surgeClose;
+                        const pnl = stock.buyPrice
+                          ? ((sellPrice - stock.buyPrice) / stock.buyPrice * 100).toFixed(2)
+                          : '0';
+                        const updated = await closeTrade(stock.id, sellPrice);
+                        setStocks(updated);
+                        Alert.alert(
+                          'Trade Closed 💰',
+                          `Sold ${ticker} at ₹${sellPrice.toFixed(2)}\nP&L: ${Number(pnl) >= 0 ? '+' : ''}${pnl}%`
+                        );
+                      },
+                    },
+                  ]
+                );
+                return;
+              }
+
+              // Got live price — show confirmation with P&L
+              const entryPrice = stock.buyPrice || stock.surgeClose;
+              const pnlAmount = (livePrice - entryPrice) * (stock.buyQuantity || 1);
+              const pnlPct = ((livePrice - entryPrice) / entryPrice * 100).toFixed(2);
+              const totalValue = livePrice * (stock.buyQuantity || 1);
+
+              Alert.alert(
+                `Sell ${ticker}?`,
+                `📈 Live Price: ₹${livePrice.toFixed(2)}\n` +
+                `📊 Entry: ₹${entryPrice.toFixed(2)}\n` +
+                `📦 Qty: ${stock.buyQuantity || 1} shares\n` +
+                `💰 Total: ₹${totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}\n` +
+                `${Number(pnlPct) >= 0 ? '📈' : '📉'} P&L: ${Number(pnlPct) >= 0 ? '+' : ''}${pnlPct}% (₹${pnlAmount >= 0 ? '+' : ''}${pnlAmount.toFixed(0)})`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: '✅ Confirm Sell',
+                    style: 'destructive',
+                    onPress: async () => {
+                      const updated = await closeTrade(stock.id, livePrice);
+                      setStocks(updated);
+                      Alert.alert(
+                        'Trade Closed! 💰',
+                        `Sold ${stock.buyQuantity || 1} shares of ${ticker} at ₹${livePrice.toFixed(2)}\nP&L: ${Number(pnlPct) >= 0 ? '+' : ''}${pnlPct}%`
+                      );
+                    },
+                  },
+                ]
+              );
+            } catch (error) {
+              setIsFetchingSellPrice(false);
+              Alert.alert('Error', 'Failed to fetch live price. Please try again.');
+            }
+          },
+        },
+      ]
+    );
   }, []);
 
   const handleExtend = useCallback(async (stock: OpportunityStock, days: number) => {
@@ -566,9 +676,89 @@ export const GoodOpportunityTab: React.FC = () => {
           </View>
         )}
 
-        {/* Bottom padding */}
-        <View style={{ height: 30 }} />
+        {/* Bottom padding for bottom tab bar */}
+        <View style={{ height: 80 }} />
       </ScrollView>
+
+      {/* Fetching sell price overlay */}
+      {isFetchingSellPrice && (
+        <View style={styles.fetchOverlay}>
+          <View style={styles.fetchCard}>
+            <ActivityIndicator size="large" color="#00E5FF" />
+            <Text style={styles.fetchText}>Fetching live price...</Text>
+            <Text style={styles.fetchSubtext}>Calling Yahoo Finance API</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Buy Quantity Modal */}
+      <Modal
+        visible={buyModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setBuyModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.buyModalCard}>
+            <Text style={styles.buyModalTitle}>🛒 Paper Trade</Text>
+            <Text style={styles.buyModalTicker}>
+              {buyModalStock?.ticker.replace('.NS', '')}
+            </Text>
+            <Text style={styles.buyModalPrice}>
+              Price: ₹{(buyModalStock?.currentPrice || buyModalStock?.surgeClose || 0).toFixed(2)}
+            </Text>
+
+            {/* Quantity Input */}
+            <View style={styles.quantityInputContainer}>
+              <Text style={styles.quantityLabel}>Quantity</Text>
+              <TextInput
+                style={styles.quantityInput}
+                value={buyQuantity}
+                onChangeText={setBuyQuantity}
+                keyboardType="numeric"
+                placeholder="Enter number of shares"
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                autoFocus
+              />
+            </View>
+
+            {/* Total cost preview */}
+            {buyQuantity && parseInt(buyQuantity, 10) > 0 && (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Total Investment</Text>
+                <Text style={styles.totalValue}>
+                  ₹{((parseInt(buyQuantity, 10) || 0) * (buyModalStock?.currentPrice || buyModalStock?.surgeClose || 0)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </Text>
+              </View>
+            )}
+
+            {/* Action Buttons */}
+            <View style={styles.buyModalActions}>
+              <TouchableOpacity
+                style={styles.buyModalCancel}
+                onPress={() => setBuyModalVisible(false)}
+              >
+                <Text style={styles.buyModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.buyModalConfirm,
+                  (!buyQuantity || parseInt(buyQuantity, 10) <= 0) && { opacity: 0.4 },
+                ]}
+                onPress={confirmBuy}
+                disabled={!buyQuantity || parseInt(buyQuantity, 10) <= 0}
+              >
+                <LinearGradient
+                  colors={['#00E676', '#00C853']}
+                  style={styles.buyModalConfirmGradient}
+                >
+                  <Text style={styles.buyModalConfirmText}>Buy</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -865,5 +1055,149 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.5)',
     textAlign: 'center',
     lineHeight: 22,
+  },
+  // Fetch overlay
+  fetchOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 100,
+  },
+  fetchCard: {
+    backgroundColor: 'rgba(30, 25, 45, 0.98)',
+    borderRadius: 20,
+    padding: 30,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.2)',
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+  },
+  fetchText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 16,
+  },
+  fetchSubtext: {
+    color: 'rgba(255, 255, 255, 0.4)',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  // Buy Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  buyModalCard: {
+    backgroundColor: '#1e1932',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 360,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.2)',
+    shadowColor: '#00E676',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+  },
+  buyModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  buyModalTicker: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#00E676',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  buyModalPrice: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.6)',
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  quantityInputContainer: {
+    marginBottom: 16,
+  },
+  quantityLabel: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.5)',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  quantityInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 230, 118, 0.2)',
+    textAlign: 'center',
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 230, 118, 0.08)',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 20,
+  },
+  totalLabel: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  totalValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#00E676',
+  },
+  buyModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  buyModalCancel: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  buyModalCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  buyModalConfirm: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  buyModalConfirmGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  buyModalConfirmText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

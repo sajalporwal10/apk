@@ -100,11 +100,12 @@ export async function mergeNewOpportunities(
 // ─── Stock actions ───────────────────────────────────────────────────
 
 /**
- * Mark a stock as bought at current price
+ * Mark a stock as bought at current price with quantity (paper trading)
  */
 export async function markAsBought(
   stockId: string,
-  buyPrice: number
+  buyPrice: number,
+  quantity: number = 1
 ): Promise<OpportunityStock[]> {
   const stocks = await loadOpportunities();
   const updated = stocks.map(s => {
@@ -114,6 +115,7 @@ export async function markAsBought(
       status: 'bought' as OpportunityStatus,
       buyPrice,
       buyDate: Date.now(),
+      buyQuantity: quantity,
       outcome: 'pending' as const,
       outcomePercent: 0,
       peakPriceAfterBuy: buyPrice,

@@ -199,6 +199,7 @@ export async function scanGoodOpportunities(
 
         buyPrice: null,
         buyDate: null,
+        buyQuantity: null,
         sellPrice: null,
         sellDate: null,
         isClosed: false,

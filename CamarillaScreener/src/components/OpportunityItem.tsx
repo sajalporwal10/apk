@@ -85,20 +85,9 @@ export const OpportunityItem: React.FC<OpportunityItemProps> = ({
     );
   };
 
-  // Handle close trade
+  // Handle close trade - delegates to parent which handles API price fetch
   const handleClose = () => {
-    if (!stock.currentPrice) {
-      Alert.alert('Error', 'No current price available. Refresh prices first.');
-      return;
-    }
-    Alert.alert(
-      `Close ${ticker} Trade?`,
-      `Sell at ₹${stock.currentPrice.toFixed(2)}?\nEntry: ₹${stock.buyPrice?.toFixed(2)}\nP&L: ${(stock.outcomePercent || 0) >= 0 ? '+' : ''}${(stock.outcomePercent || 0).toFixed(2)}%`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Close Trade', style: 'destructive', onPress: () => onCloseTrade(stock) },
-      ]
-    );
+    onCloseTrade(stock);
   };
 
   // Alert type label
@@ -216,6 +205,10 @@ export const OpportunityItem: React.FC<OpportunityItemProps> = ({
             <Text style={styles.infoValue}>₹{stock.buyPrice.toFixed(2)}</Text>
           </View>
           <View style={styles.infoItem}>
+            <Text style={styles.infoLabel}>Qty</Text>
+            <Text style={[styles.infoValue, { color: '#00E5FF' }]}>{stock.buyQuantity || 1} shares</Text>
+          </View>
+          <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>P&L</Text>
             <Text style={[
               styles.infoValue,
@@ -224,9 +217,30 @@ export const OpportunityItem: React.FC<OpportunityItemProps> = ({
               {(stock.outcomePercent || 0) >= 0 ? '+' : ''}{(stock.outcomePercent || 0).toFixed(2)}%
             </Text>
           </View>
-          <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>Bought On</Text>
-            <Text style={styles.infoValue}>{formatDate(stock.buyDate!)}</Text>
+        </View>
+      )}
+
+      {/* Total value for bought trades */}
+      {isBought && stock.buyPrice && stock.buyQuantity && stock.buyQuantity > 1 && (
+        <View style={styles.investmentRow}>
+          <View style={styles.investmentItem}>
+            <Text style={styles.infoLabel}>Invested</Text>
+            <Text style={styles.infoValue}>
+              ₹{(stock.buyPrice * stock.buyQuantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            </Text>
+          </View>
+          <View style={styles.investmentItem}>
+            <Text style={styles.infoLabel}>Current Value</Text>
+            <Text style={[styles.infoValue, { color: (stock.outcomePercent || 0) >= 0 ? '#00E676' : '#FF5252' }]}>
+              ₹{(currentPrice * stock.buyQuantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            </Text>
+          </View>
+          <View style={styles.investmentItem}>
+            <Text style={styles.infoLabel}>P&L (₹)</Text>
+            <Text style={[styles.infoValue, { color: (stock.outcomePercent || 0) >= 0 ? '#00E676' : '#FF5252', fontWeight: '700' }]}>
+              {((currentPrice - stock.buyPrice) * stock.buyQuantity) >= 0 ? '+' : ''}
+              ₹{((currentPrice - stock.buyPrice) * stock.buyQuantity).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            </Text>
           </View>
         </View>
       )}
@@ -249,19 +263,27 @@ export const OpportunityItem: React.FC<OpportunityItemProps> = ({
       )}
 
       {/* Closed trade info */}
-      {stock.isClosed && stock.sellPrice && (
-        <View style={styles.closedTradeRow}>
-          <Text style={styles.closedTradeText}>
-            Closed at ₹{stock.sellPrice.toFixed(2)} on {formatDate(stock.sellDate!)}
-          </Text>
-          <Text style={[
-            styles.closedPnl,
-            { color: (stock.outcomePercent || 0) >= 0 ? '#00E676' : '#FF5252' }
-          ]}>
-            {(stock.outcomePercent || 0) >= 0 ? '+' : ''}{(stock.outcomePercent || 0).toFixed(2)}% return
-          </Text>
-        </View>
-      )}
+      {stock.isClosed && stock.sellPrice && (() => {
+        const closedQty = stock.buyQuantity || 1;
+        const closedPnlPct = (stock.outcomePercent || 0);
+        const closedPnlAbs = (stock.buyPrice && stock.buyQuantity)
+          ? (stock.sellPrice - stock.buyPrice) * stock.buyQuantity
+          : null;
+        return (
+          <View style={styles.closedTradeRow}>
+            <Text style={styles.closedTradeText}>
+              Closed {closedQty} share{closedQty > 1 ? 's' : ''} at ₹{stock.sellPrice.toFixed(2)} on {formatDate(stock.sellDate!)}
+            </Text>
+            <Text style={[
+              styles.closedPnl,
+              { color: closedPnlPct >= 0 ? '#00E676' : '#FF5252' }
+            ]}>
+              {closedPnlPct >= 0 ? '+' : ''}{closedPnlPct.toFixed(2)}% return
+              {closedPnlAbs !== null ? ` (₹${closedPnlAbs >= 0 ? '+' : ''}${closedPnlAbs.toFixed(0)})` : ''}
+            </Text>
+          </View>
+        );
+      })()}
 
       {/* Action Buttons */}
       {!isArchived && (
@@ -273,7 +295,7 @@ export const OpportunityItem: React.FC<OpportunityItemProps> = ({
           )}
           {isBought && !stock.isClosed && (
             <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
-              <Text style={styles.closeButtonText}>💰 Close Trade</Text>
+              <Text style={styles.closeButtonText}>💰 Sell (Live)</Text>
             </TouchableOpacity>
           )}
           {(stock.status === 'tracking' || stock.status === 'alert_active' || isExpired) && (
@@ -402,6 +424,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 230, 118, 0.06)',
     padding: 8,
     borderRadius: 8,
+  },
+  investmentRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    backgroundColor: 'rgba(0, 229, 255, 0.06)',
+    padding: 8,
+    borderRadius: 8,
+  },
+  investmentItem: {
+    flex: 1,
   },
   trackingRow: {
     flexDirection: 'row',

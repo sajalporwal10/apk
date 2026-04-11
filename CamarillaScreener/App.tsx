@@ -1,4 +1,4 @@
-// Screener - Main Application (Premium Elegant Theme with Sector Grouping)
+// Screener - Main Application (Premium Dark Theme with Bottom Tab Bar)
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
@@ -13,6 +13,9 @@ import {
   Alert,
   ActivityIndicator,
   SectionList,
+  Animated,
+  Dimensions,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -24,6 +27,19 @@ import { saveScanResults, loadCachedResults, getCacheTimestamp, getStocksWithCom
 import { loadPortfolio, addPosition } from './src/services/tradingStorage';
 import { exportToCSV } from './src/services/export';
 import { getLastCompletedMonth } from './src/utils/calculations';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const TAB_COUNT = 5;
+const TAB_WIDTH = (SCREEN_WIDTH - 32) / TAB_COUNT; // 16px padding each side
+
+// Tab configuration
+const TABS: { key: TabType; icon: string; label: string; color: string }[] = [
+  { key: 'screener', icon: '📊', label: 'Screener', color: '#00E5FF' },
+  { key: 'trading', icon: '📈', label: 'Trading', color: '#00E676' },
+  { key: 'volume', icon: '🔥', label: 'Volume', color: '#FF9100' },
+  { key: 'opportunity', icon: '🎯', label: 'Opp.', color: '#B388FF' },
+  { key: 'comments', icon: '💬', label: 'Notes', color: '#FF80AB' },
+];
 
 export default function App() {
   const [stocks, setStocks] = useState<StockData[]>([]);
@@ -50,6 +66,11 @@ export default function App() {
   const [portfolio, setPortfolio] = useState<Portfolio>(createEmptyPortfolio());
   const [buyModalVisible, setBuyModalVisible] = useState(false);
   const [stockToBuy, setStockToBuy] = useState<StockData | null>(null);
+
+  // Tab animation
+  const tabIndicatorAnim = useRef(new Animated.Value(0)).current;
+  const tabScaleAnims = useRef(TABS.map(() => new Animated.Value(1))).current;
+  const contentOpacity = useRef(new Animated.Value(1)).current;
 
   const cancelRef = useRef(false);
 
@@ -197,6 +218,48 @@ export default function App() {
     setMaxRange(max);
   }, []);
 
+  // Animated tab switching
+  const handleTabPress = useCallback((tab: TabType, index: number) => {
+    // Animate pill indicator slide
+    Animated.spring(tabIndicatorAnim, {
+      toValue: index * TAB_WIDTH,
+      useNativeDriver: true,
+      tension: 68,
+      friction: 10,
+    }).start();
+
+    // Bounce active icon
+    Animated.sequence([
+      Animated.timing(tabScaleAnims[index], {
+        toValue: 1.2,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.spring(tabScaleAnims[index], {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 200,
+        friction: 10,
+      }),
+    ]).start();
+
+    // Fade content
+    Animated.sequence([
+      Animated.timing(contentOpacity, {
+        toValue: 0.3,
+        duration: 80,
+        useNativeDriver: true,
+      }),
+      Animated.timing(contentOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    setActiveTab(tab);
+  }, [tabIndicatorAnim, tabScaleAnims, contentOpacity]);
+
   // Filter stocks based on search query and custom range filter
   const filteredStocks = useMemo(() => {
     return stocks.filter(s => {
@@ -237,6 +300,22 @@ export default function App() {
 
   const { label: refMonth } = getLastCompletedMonth();
 
+  // Get active tab info
+  const activeTabIndex = TABS.findIndex(t => t.key === activeTab);
+  const activeTabColor = TABS[activeTabIndex]?.color || '#00E5FF';
+
+  // Get contextual header title
+  const getHeaderTitle = (): string => {
+    switch (activeTab) {
+      case 'screener': return 'Screener';
+      case 'trading': return 'Trading';
+      case 'volume': return 'Volume';
+      case 'opportunity': return 'Opportunity';
+      case 'comments': return 'Notes';
+      default: return 'Screener';
+    }
+  };
+
   return (
     <LinearGradient
       colors={['#1a1625', '#13111a', '#0d0b12']}
@@ -248,245 +327,269 @@ export default function App() {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.title}>Screener</Text>
+            <Text style={styles.title}>{getHeaderTitle()}</Text>
             <Text style={styles.subtitle}>NIFTY 500 • {refMonth}</Text>
           </View>
           <View style={styles.headerButtons}>
-            <TouchableOpacity
-              style={[styles.exportButton, isExporting && styles.buttonDisabled]}
-              onPress={handleExport}
-              disabled={isExporting || stocks.length === 0}
-            >
-              {isExporting ? (
-                <ActivityIndicator size="small" color="#1a1625" />
-              ) : (
-                <Text style={styles.exportButtonText}>📤</Text>
-              )}
-            </TouchableOpacity>
+            {activeTab === 'screener' && (
+              <TouchableOpacity
+                style={[styles.exportButton, isExporting && styles.buttonDisabled]}
+                onPress={handleExport}
+                disabled={isExporting || stocks.length === 0}
+              >
+                {isExporting ? (
+                  <ActivityIndicator size="small" color="#1a1625" />
+                ) : (
+                  <Text style={styles.exportButtonText}>📤</Text>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
-        {/* Main Tabs */}
-        <View style={styles.tabsContainer}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'screener' && styles.activeTab]}
-            onPress={() => setActiveTab('screener')}
-          >
-            <Text style={[styles.tabText, activeTab === 'screener' && styles.activeTabText]}>
-              📊 Screener
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'trading' && styles.activeTab]}
-            onPress={() => setActiveTab('trading')}
-          >
-            <Text style={[styles.tabText, activeTab === 'trading' && styles.activeTabText]}>
-              📈 Trading
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'volume' && styles.activeTab]}
-            onPress={() => setActiveTab('volume')}
-          >
-            <Text style={[styles.tabText, activeTab === 'volume' && styles.activeTabText]}>
-              🔥 Volume
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'opportunity' && styles.activeTab]}
-            onPress={() => setActiveTab('opportunity')}
-          >
-            <Text style={[styles.tabText, activeTab === 'opportunity' && styles.activeTabText]}>
-              🎯 Opp.
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'comments' && styles.activeTab]}
-            onPress={() => setActiveTab('comments')}
-          >
-            <Text style={[styles.tabText, activeTab === 'comments' && styles.activeTabText]}>
-              💬 Notes
-            </Text>
-          </TouchableOpacity>
-        </View>
+        {/* Content Area */}
+        <Animated.View style={[styles.contentArea, { opacity: contentOpacity }]}>
+          {/* Screener Tab Content */}
+          {activeTab === 'screener' && (
+            <>
+              {/* NEW: Search Bar */}
+              <SearchBar
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search stocks by name, symbol, or sector..."
+              />
 
-        {/* Screener Tab Content */}
-        {activeTab === 'screener' && (
-          <>
-            {/* NEW: Search Bar */}
-            <SearchBar
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search stocks by name, symbol, or sector..."
-            />
+              {/* NEW: Custom Range Filter */}
+              <RangeFilter
+                minValue={minRange}
+                maxValue={maxRange}
+                onRangeChange={handleRangeChange}
+                absoluteMin={0}
+                absoluteMax={10}
+                step={0.5}
+                matchCount={filteredStocks.length}
+              />
 
-            {/* NEW: Custom Range Filter */}
-            <RangeFilter
-              minValue={minRange}
-              maxValue={maxRange}
-              onRangeChange={handleRangeChange}
-              absoluteMin={0}
-              absoluteMax={10}
-              step={0.5}
-              matchCount={filteredStocks.length}
-            />
+              {/* Group By Toggle */}
+              <View style={styles.groupToggleRow}>
+                <Text style={styles.groupLabel}>Group by:</Text>
+                <TouchableOpacity
+                  style={[styles.groupChip, groupBy === 'none' && styles.activeGroupChip]}
+                  onPress={() => setGroupBy('none')}
+                >
+                  <Text style={[styles.groupChipText, groupBy === 'none' && styles.activeGroupChipText]}>All</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.groupChip, groupBy === 'sector' && styles.activeGroupChip]}
+                  onPress={() => setGroupBy('sector')}
+                >
+                  <Text style={[styles.groupChipText, groupBy === 'sector' && styles.activeGroupChipText]}>Sector</Text>
+                </TouchableOpacity>
+              </View>
 
-            {/* Group By Toggle */}
-            <View style={styles.groupToggleRow}>
-              <Text style={styles.groupLabel}>Group by:</Text>
+              {/* Scan Button */}
               <TouchableOpacity
-                style={[styles.groupChip, groupBy === 'none' && styles.activeGroupChip]}
-                onPress={() => setGroupBy('none')}
+                style={styles.scanButtonContainer}
+                onPress={handleStartScan}
+                activeOpacity={0.8}
               >
-                <Text style={[styles.groupChipText, groupBy === 'none' && styles.activeGroupChipText]}>All</Text>
+                <LinearGradient
+                  colors={isScanning ? ['#FF6B6B', '#EE5A5A'] : ['#00E5FF', '#B388FF']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.scanButton}
+                >
+                  <Text style={styles.scanButtonText}>
+                    {isScanning ? '⏹ Stop Scan' : '⚡ Start Fast Scan'}
+                  </Text>
+                </LinearGradient>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.groupChip, groupBy === 'sector' && styles.activeGroupChip]}
-                onPress={() => setGroupBy('sector')}
-              >
-                <Text style={[styles.groupChipText, groupBy === 'sector' && styles.activeGroupChipText]}>Sector</Text>
-              </TouchableOpacity>
-            </View>
 
-            {/* Scan Button */}
-            <TouchableOpacity
-              style={styles.scanButtonContainer}
-              onPress={handleStartScan}
-              activeOpacity={0.8}
+              {/* Scan Progress */}
+              {isScanning && (
+                <ScanProgress
+                  current={scanProgress.current}
+                  total={scanProgress.total}
+                  currentTicker={scanProgress.ticker}
+                />
+              )}
+
+              {/* Loading State */}
+              {isLoading && !isScanning && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#00E5FF" />
+                  <Text style={styles.loadingText}>Loading cached results...</Text>
+                </View>
+              )}
+
+              {/* Empty State */}
+              {!isLoading && !isScanning && stocks.length === 0 && (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyIcon}>📊</Text>
+                  <Text style={styles.emptyTitle}>No Results Yet</Text>
+                  <Text style={styles.emptyText}>
+                    Tap "Start Fast Scan" to fetch NIFTY 500 stocks{'\n'}with parallel processing
+                  </Text>
+                </View>
+              )}
+
+              {/* Stock List - Flat or Sectioned */}
+              {!isLoading && !isScanning && filteredStocks.length > 0 && groupBy === 'none' && (
+                <FlatList
+                  data={filteredStocks}
+                  keyExtractor={(item) => item.ticker}
+                  renderItem={({ item }) => (
+                    <StockListItem stock={item} onPress={handleStockPress} />
+                  )}
+                  contentContainerStyle={styles.listContent}
+                  showsVerticalScrollIndicator={false}
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={isLoading}
+                      onRefresh={loadInitialData}
+                      tintColor="#00E5FF"
+                    />
+                  }
+                />
+              )}
+
+              {/* Stock List - Grouped by Sector */}
+              {!isLoading && !isScanning && filteredStocks.length > 0 && groupBy === 'sector' && (
+                <SectionList
+                  sections={sectionData}
+                  keyExtractor={(item) => item.ticker}
+                  renderSectionHeader={({ section }) => (
+                    <SectorHeader
+                      sector={section.title}
+                      count={section.count}
+                      isExpanded={expandedSectors.has(section.title)}
+                      onToggle={() => toggleSector(section.title)}
+                    />
+                  )}
+                  renderItem={({ item, section }) =>
+                    expandedSectors.has(section.title) ? (
+                      <StockListItem stock={item} onPress={handleStockPress} />
+                    ) : null
+                  }
+                  contentContainerStyle={styles.listContent}
+                  showsVerticalScrollIndicator={false}
+                  stickySectionHeadersEnabled={false}
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={isLoading}
+                      onRefresh={loadInitialData}
+                      tintColor="#00E5FF"
+                    />
+                  }
+                />
+              )}
+
+              {/* No stocks in filter */}
+              {!isLoading && !isScanning && stocks.length > 0 && filteredStocks.length === 0 && (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyIcon}>🔍</Text>
+                  <Text style={styles.emptyTitle}>No Matches Found</Text>
+                  <Text style={styles.emptyText}>
+                    {searchQuery.trim()
+                      ? `No stocks found matching "${searchQuery}" in range ${minRange}%-${maxRange}%`
+                      : `No stocks found with range ${minRange}%-${maxRange}%`}
+                  </Text>
+                </View>
+              )}
+            </>
+          )}
+
+          {/* Comments Tab Content */}
+          {activeTab === 'comments' && (
+            <CommentsList
+              stocksWithComments={stocksWithComments}
+              onStockPress={handleStockPress}
+            />
+          )}
+
+          {/* Volume Shockers Tab Content - Always mounted so scans continue when switching tabs */}
+          <View style={activeTab === 'volume' ? { flex: 1 } : { height: 0, overflow: 'hidden', position: 'absolute', width: 0 }}>
+            <VolumeShockersTab />
+          </View>
+
+          {/* Good Opportunity Tab Content - Always mounted so scans continue when switching tabs */}
+          <View style={activeTab === 'opportunity' ? { flex: 1 } : { height: 0, overflow: 'hidden', position: 'absolute', width: 0 }}>
+            <GoodOpportunityTab />
+          </View>
+
+          {/* Trading Tab Content */}
+          {activeTab === 'trading' && (
+            <TradingTab
+              stocks={stocks}
+              portfolio={portfolio}
+              onPortfolioChange={setPortfolio}
+              onRefreshPortfolio={loadPortfolioData}
+            />
+          )}
+        </Animated.View>
+
+        {/* ─── Bottom Tab Bar ─── */}
+        <View style={styles.bottomTabBarContainer}>
+          <View style={styles.bottomTabBarGlow} />
+          <View style={styles.bottomTabBar}>
+            {/* Sliding Pill Indicator */}
+            <Animated.View
+              style={[
+                styles.tabIndicator,
+                {
+                  transform: [{ translateX: tabIndicatorAnim }],
+                  width: TAB_WIDTH,
+                },
+              ]}
             >
               <LinearGradient
-                colors={isScanning ? ['#FF6B6B', '#EE5A5A'] : ['#00E5FF', '#B388FF']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.scanButton}
-              >
-                <Text style={styles.scanButtonText}>
-                  {isScanning ? '⏹ Stop Scan' : '⚡ Start Fast Scan'}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            {/* Scan Progress */}
-            {isScanning && (
-              <ScanProgress
-                current={scanProgress.current}
-                total={scanProgress.total}
-                currentTicker={scanProgress.ticker}
+                colors={[`${activeTabColor}25`, `${activeTabColor}10`]}
+                style={styles.tabIndicatorGradient}
               />
-            )}
+            </Animated.View>
 
-            {/* Loading State */}
-            {isLoading && !isScanning && (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#00E5FF" />
-                <Text style={styles.loadingText}>Loading cached results...</Text>
-              </View>
-            )}
-
-            {/* Empty State */}
-            {!isLoading && !isScanning && stocks.length === 0 && (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyIcon}>📊</Text>
-                <Text style={styles.emptyTitle}>No Results Yet</Text>
-                <Text style={styles.emptyText}>
-                  Tap "Start Fast Scan" to fetch NIFTY 500 stocks{'\n'}with parallel processing
-                </Text>
-              </View>
-            )}
-
-            {/* Stock List - Flat or Sectioned */}
-            {!isLoading && !isScanning && filteredStocks.length > 0 && groupBy === 'none' && (
-              <FlatList
-                data={filteredStocks}
-                keyExtractor={(item) => item.ticker}
-                renderItem={({ item }) => (
-                  <StockListItem stock={item} onPress={handleStockPress} />
-                )}
-                contentContainerStyle={styles.listContent}
-                showsVerticalScrollIndicator={false}
-                refreshControl={
-                  <RefreshControl
-                    refreshing={isLoading}
-                    onRefresh={loadInitialData}
-                    tintColor="#00E5FF"
-                  />
-                }
-              />
-            )}
-
-            {/* Stock List - Grouped by Sector */}
-            {!isLoading && !isScanning && filteredStocks.length > 0 && groupBy === 'sector' && (
-              <SectionList
-                sections={sectionData}
-                keyExtractor={(item) => item.ticker}
-                renderSectionHeader={({ section }) => (
-                  <SectorHeader
-                    sector={section.title}
-                    count={section.count}
-                    isExpanded={expandedSectors.has(section.title)}
-                    onToggle={() => toggleSector(section.title)}
-                  />
-                )}
-                renderItem={({ item, section }) =>
-                  expandedSectors.has(section.title) ? (
-                    <StockListItem stock={item} onPress={handleStockPress} />
-                  ) : null
-                }
-                contentContainerStyle={styles.listContent}
-                showsVerticalScrollIndicator={false}
-                stickySectionHeadersEnabled={false}
-                refreshControl={
-                  <RefreshControl
-                    refreshing={isLoading}
-                    onRefresh={loadInitialData}
-                    tintColor="#00E5FF"
-                  />
-                }
-              />
-            )}
-
-            {/* No stocks in filter */}
-            {!isLoading && !isScanning && stocks.length > 0 && filteredStocks.length === 0 && (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyIcon}>🔍</Text>
-                <Text style={styles.emptyTitle}>No Matches Found</Text>
-                <Text style={styles.emptyText}>
-                  {searchQuery.trim()
-                    ? `No stocks found matching "${searchQuery}" in range ${minRange}%-${maxRange}%`
-                    : `No stocks found with range ${minRange}%-${maxRange}%`}
-                </Text>
-              </View>
-            )}
-          </>
-        )}
-
-        {/* Comments Tab Content */}
-        {activeTab === 'comments' && (
-          <CommentsList
-            stocksWithComments={stocksWithComments}
-            onStockPress={handleStockPress}
-          />
-        )}
-
-        {/* Volume Shockers Tab Content - Always mounted so scans continue when switching tabs */}
-        <View style={activeTab === 'volume' ? { flex: 1 } : { height: 0, overflow: 'hidden', position: 'absolute', width: 0 }}>
-          <VolumeShockersTab />
+            {/* Tab Items */}
+            {TABS.map((tab, index) => {
+              const isActive = activeTab === tab.key;
+              return (
+                <TouchableOpacity
+                  key={tab.key}
+                  style={styles.bottomTabItem}
+                  onPress={() => handleTabPress(tab.key, index)}
+                  activeOpacity={0.7}
+                >
+                  <Animated.Text
+                    style={[
+                      styles.bottomTabIcon,
+                      {
+                        transform: [{ scale: tabScaleAnims[index] }],
+                        ...(isActive && {
+                          textShadowColor: tab.color,
+                          textShadowOffset: { width: 0, height: 0 },
+                          textShadowRadius: 12,
+                        }),
+                      },
+                    ]}
+                  >
+                    {tab.icon}
+                  </Animated.Text>
+                  <Text
+                    style={[
+                      styles.bottomTabLabel,
+                      isActive && { color: tab.color, fontWeight: '700' },
+                    ]}
+                  >
+                    {tab.label}
+                  </Text>
+                  {/* Active dot */}
+                  {isActive && (
+                    <View style={[styles.activeTabDot, { backgroundColor: tab.color }]} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
-
-        {/* Good Opportunity Tab Content - Always mounted so scans continue when switching tabs */}
-        <View style={activeTab === 'opportunity' ? { flex: 1 } : { height: 0, overflow: 'hidden', position: 'absolute', width: 0 }}>
-          <GoodOpportunityTab />
-        </View>
-
-        {/* Trading Tab Content */}
-        {activeTab === 'trading' && (
-          <TradingTab
-            stocks={stocks}
-            portfolio={portfolio}
-            onPortfolioChange={setPortfolio}
-            onRefreshPortfolio={loadPortfolioData}
-          />
-        )}
 
         {/* Stock Details Modal */}
         <StockDetailsModal
@@ -589,61 +692,9 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.5,
   },
-  // Main Tabs
-  tabsContainer: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 12,
-    padding: 4,
-  },
-  tab: {
+  // Content Area
+  contentArea: {
     flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 10,
-  },
-  activeTab: {
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.5)',
-  },
-  activeTabText: {
-    color: '#00E5FF',
-  },
-  // Filter Chips
-  filterRow: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginBottom: 8,
-    gap: 10,
-  },
-  filterChip: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  activeFilterChip: {
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
-    borderColor: 'rgba(0, 229, 255, 0.4)',
-  },
-  filterChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.5)',
-  },
-  activeFilterChipText: {
-    color: '#00E5FF',
   },
   // Group Toggle
   groupToggleRow: {
@@ -733,5 +784,80 @@ const styles = StyleSheet.create({
   listContent: {
     paddingVertical: 4,
     paddingBottom: 20,
+  },
+  // ─── Bottom Tab Bar ───
+  bottomTabBarContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: Platform.OS === 'ios' ? 4 : 12,
+    paddingTop: 6,
+  },
+  bottomTabBarGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 16,
+    right: 16,
+    height: 1,
+    backgroundColor: 'rgba(0, 229, 255, 0.2)',
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  bottomTabBar: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(20, 16, 30, 0.92)',
+    borderRadius: 20,
+    height: 64,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    overflow: 'hidden',
+    // Frosted glass shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 20,
+  },
+  tabIndicator: {
+    position: 'absolute',
+    left: 0,
+    top: 4,
+    bottom: 4,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  tabIndicatorGradient: {
+    flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  bottomTabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+    position: 'relative',
+  },
+  bottomTabIcon: {
+    fontSize: 20,
+    marginBottom: 2,
+  },
+  bottomTabLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.35)',
+    letterSpacing: 0.2,
+  },
+  activeTabDot: {
+    position: 'absolute',
+    top: 6,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
   },
 });

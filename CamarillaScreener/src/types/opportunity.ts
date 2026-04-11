@@ -37,9 +37,10 @@ export interface OpportunityStock {
   lastCheckedDate: number | null;
   priceChangeFromSurge: number | null; // % change from surge close
 
-  // Buy tracking (when user acts on the alert)
+  // Buy tracking (when user acts on the alert / paper trade)
   buyPrice: number | null;
   buyDate: number | null;
+  buyQuantity: number | null;  // number of shares (paper trading)
 
   // Sell / close tracking
   sellPrice: number | null;
