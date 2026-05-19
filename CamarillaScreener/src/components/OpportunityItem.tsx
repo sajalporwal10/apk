@@ -1,12 +1,19 @@
 // OpportunityItem - Individual stock card for the Good Opportunity tab
 // Shows surge data, buy zone proximity, tracking status, and actions
+// Supports compact mode: slim row that expands on tap
 
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Animated, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { OpportunityStock, EXTEND_OPTIONS_DAYS, NEAR_OPEN_THRESHOLD } from '../types/opportunity';
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 interface OpportunityItemProps {
   stock: OpportunityStock;
+  compact?: boolean;
   onBuy: (stock: OpportunityStock) => void;
   onCloseTrade: (stock: OpportunityStock) => void;
   onExtend: (stock: OpportunityStock, days: number) => void;
@@ -15,11 +22,14 @@ interface OpportunityItemProps {
 
 export const OpportunityItem: React.FC<OpportunityItemProps> = ({
   stock,
+  compact = false,
   onBuy,
   onCloseTrade,
   onExtend,
   onArchive,
 }) => {
+  const [expanded, setExpanded] = useState(false);
+
   const ticker = stock.ticker.replace('.NS', '');
   const isAlert = stock.status === 'alert_active';
   const isBought = stock.status === 'bought';
@@ -113,14 +123,86 @@ export const OpportunityItem: React.FC<OpportunityItemProps> = ({
     return { label: '👁 Tracking', color: '#00E676', bgColor: 'rgba(0, 230, 118, 0.15)' };
   };
 
+  // Status dot color for compact view
+  const getStatusDotColor = (): string => {
+    if (isAlert) return '#FF5252';
+    if (isBought) return (stock.outcomePercent || 0) >= 0 ? '#00E676' : '#FF5252';
+    if (isExpired) return '#FFD740';
+    if (isArchived) return '#90A4AE';
+    return '#00E676';
+  };
+
   const badge = getStatusBadge();
 
+  const handleCompactPress = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded(!expanded);
+  };
+
+  // ─── COMPACT MODE ───────────────────────────────────────────────
+  if (compact && !expanded) {
+    const changePercent = stock.priceChangeFromSurge || 0;
+    const changeColor = changePercent >= 0 ? '#00E676' : '#FF5252';
+
+    return (
+      <TouchableOpacity
+        style={[
+          compactStyles.row,
+          isAlert && compactStyles.alertRow,
+          isArchived && compactStyles.archivedRow,
+        ]}
+        onPress={handleCompactPress}
+        activeOpacity={0.7}
+      >
+        {/* Status dot */}
+        <View style={[compactStyles.statusDot, { backgroundColor: getStatusDotColor() }]} />
+
+        {/* Ticker */}
+        <Text style={compactStyles.ticker} numberOfLines={1}>{ticker}</Text>
+
+        {/* Price */}
+        <Text style={compactStyles.price}>₹{currentPrice.toFixed(0)}</Text>
+
+        {/* Change % */}
+        <Text style={[compactStyles.change, { color: changeColor }]}>
+          {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(1)}%
+        </Text>
+
+        {/* Days or P&L for bought */}
+        {isBought ? (
+          <Text style={[compactStyles.meta, { color: (stock.outcomePercent || 0) >= 0 ? '#00E676' : '#FF5252' }]}>
+            {(stock.outcomePercent || 0) >= 0 ? '+' : ''}{(stock.outcomePercent || 0).toFixed(1)}%
+          </Text>
+        ) : (
+          <Text style={compactStyles.meta}>
+            {daysRemaining}d
+          </Text>
+        )}
+
+        {/* Expand chevron */}
+        <Text style={compactStyles.chevron}>›</Text>
+      </TouchableOpacity>
+    );
+  }
+
+  // ─── FULL MODE (or expanded from compact) ──────────────────────
   return (
     <View style={[
       styles.container,
       isAlert && styles.alertContainer,
       isArchived && styles.archivedContainer,
     ]}>
+      {/* Collapse button when expanded from compact */}
+      {compact && expanded && (
+        <TouchableOpacity
+          style={compactStyles.collapseButton}
+          onPress={handleCompactPress}
+          activeOpacity={0.7}
+        >
+          <Text style={compactStyles.collapseText}>▲ Collapse</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Header Row */}
       <View style={styles.headerRow}>
         <View style={styles.tickerSection}>
@@ -314,6 +396,84 @@ export const OpportunityItem: React.FC<OpportunityItemProps> = ({
     </View>
   );
 };
+
+// ─── Compact-mode specific styles ────────────────────────────────────
+
+const compactStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    marginHorizontal: 16,
+    marginBottom: 4,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  alertRow: {
+    borderColor: 'rgba(255, 82, 82, 0.3)',
+    backgroundColor: 'rgba(255, 82, 82, 0.05)',
+  },
+  archivedRow: {
+    opacity: 0.5,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 10,
+  },
+  ticker: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    minWidth: 60,
+  },
+  price: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#B0BEC5',
+    width: 65,
+    textAlign: 'right',
+  },
+  change: {
+    fontSize: 12,
+    fontWeight: '700',
+    width: 55,
+    textAlign: 'right',
+  },
+  meta: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.4)',
+    width: 45,
+    textAlign: 'right',
+  },
+  chevron: {
+    fontSize: 18,
+    color: 'rgba(255, 255, 255, 0.2)',
+    marginLeft: 8,
+    fontWeight: '300',
+  },
+  collapseButton: {
+    alignItems: 'center',
+    paddingBottom: 8,
+    marginBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  collapseText: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.3)',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+});
+
+// ─── Full-mode styles (unchanged) ────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {

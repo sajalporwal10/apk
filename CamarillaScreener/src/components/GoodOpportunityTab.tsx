@@ -14,6 +14,10 @@ import {
   RefreshControl,
   TextInput,
   Modal,
+  Switch,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -35,6 +39,13 @@ import {
 import { OpportunityItem } from './OpportunityItem';
 import { ScanProgress } from './ScanProgress';
 
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+type SectionKey = 'alerts' | 'trades' | 'tracking' | 'expired' | 'archived';
+
 export const GoodOpportunityTab: React.FC = () => {
   const [stocks, setStocks] = useState<OpportunityStock[]>([]);
   const [isScanning, setIsScanning] = useState(false);
@@ -42,7 +53,14 @@ export const GoodOpportunityTab: React.FC = () => {
   const [isLoadingCache, setIsLoadingCache] = useState(true);
   const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, ticker: '' });
   const [lastScanTime, setLastScanTime] = useState<Date | null>(null);
-  const [showArchived, setShowArchived] = useState(false);
+  const [compactMode, setCompactMode] = useState(true);
+  const [collapsedSections, setCollapsedSections] = useState<Record<SectionKey, boolean>>({
+    alerts: false,     // open by default — needs immediate attention
+    trades: false,     // open by default — active trades are important
+    tracking: true,    // collapsed by default — usually the longest list
+    expired: true,     // collapsed by default
+    archived: true,    // collapsed by default
+  });
   const [showStats, setShowStats] = useState(true);
 
   // Paper trading modal state
@@ -345,6 +363,65 @@ export const GoodOpportunityTab: React.FC = () => {
     });
   };
 
+  const toggleSection = (section: SectionKey) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  const toggleCompactMode = (value: boolean) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCompactMode(value);
+  };
+
+  // Reusable collapsible section renderer
+  const renderSection = (
+    sectionKey: SectionKey,
+    title: string,
+    icon: string,
+    stockList: OpportunityStock[],
+    badgeColor: string,
+    badgeBgColor: string,
+  ) => {
+    if (stockList.length === 0) return null;
+    const isCollapsed = collapsedSections[sectionKey];
+
+    return (
+      <View style={styles.sectionContainer}>
+        <TouchableOpacity
+          style={[
+            styles.sectionHeader,
+            !isCollapsed && styles.sectionHeaderActive,
+          ]}
+          onPress={() => toggleSection(sectionKey)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.sectionHeaderLeft}>
+            <Text style={styles.sectionTitle}>{icon} {title}</Text>
+            <View style={[styles.sectionBadge, { backgroundColor: badgeBgColor }]}>
+              <Text style={[styles.sectionBadgeText, { color: badgeColor }]}>{stockList.length}</Text>
+            </View>
+          </View>
+          <Text style={styles.sectionToggle}>{isCollapsed ? '▼' : '▲'}</Text>
+        </TouchableOpacity>
+        {!isCollapsed && (
+          <View>
+            {stockList.map(stock => (
+              <OpportunityItem
+                key={stock.id}
+                stock={stock}
+                compact={compactMode}
+                onBuy={handleBuy}
+                onCloseTrade={handleCloseTrade}
+                onExtend={handleExtend}
+                onArchive={handleArchive}
+              />
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  };
+
   // ─── Render ────────────────────────────────────────────────────
 
   return (
@@ -476,92 +553,61 @@ export const GoodOpportunityTab: React.FC = () => {
           </View>
         )}
 
-        {/* ─── ALERT SECTION ─── */}
-        {alertStocks.length > 0 && (
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>🔔 Buy Zone Alerts</Text>
-              <View style={styles.sectionBadge}>
-                <Text style={styles.sectionBadgeText}>{alertStocks.length}</Text>
-              </View>
+        {/* ─── COMPACT MODE TOGGLE ─── */}
+        {stocks.length > 0 && (
+          <View style={styles.compactToggleRow}>
+            <View style={styles.compactToggleLeft}>
+              <Text style={styles.compactToggleIcon}>{compactMode ? '📋' : '📄'}</Text>
+              <Text style={styles.compactToggleLabel}>
+                {compactMode ? 'Compact View' : 'Detailed View'}
+              </Text>
             </View>
-            {alertStocks.map(stock => (
-              <OpportunityItem
-                key={stock.id}
-                stock={stock}
-                onBuy={handleBuy}
-                onCloseTrade={handleCloseTrade}
-                onExtend={handleExtend}
-                onArchive={handleArchive}
-              />
-            ))}
+            <Switch
+              value={compactMode}
+              onValueChange={toggleCompactMode}
+              trackColor={{ false: 'rgba(255,255,255,0.1)', true: 'rgba(0, 230, 118, 0.3)' }}
+              thumbColor={compactMode ? '#00E676' : '#90A4AE'}
+              ios_backgroundColor="rgba(255,255,255,0.1)"
+            />
           </View>
         )}
 
-        {/* ─── BOUGHT / IN-TRADE SECTION ─── */}
-        {boughtStocks.length > 0 && (
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>💼 Active Trades</Text>
-              <View style={[styles.sectionBadge, { backgroundColor: 'rgba(0, 229, 255, 0.15)' }]}>
-                <Text style={[styles.sectionBadgeText, { color: '#00E5FF' }]}>{boughtStocks.length}</Text>
-              </View>
-            </View>
-            {boughtStocks.map(stock => (
-              <OpportunityItem
-                key={stock.id}
-                stock={stock}
-                onBuy={handleBuy}
-                onCloseTrade={handleCloseTrade}
-                onExtend={handleExtend}
-                onArchive={handleArchive}
-              />
-            ))}
-          </View>
+        {/* ─── COLLAPSIBLE SECTIONS ─── */}
+
+        {renderSection(
+          'alerts',
+          'Buy Zone Alerts',
+          '🔔',
+          alertStocks,
+          '#FF5252',
+          'rgba(255, 82, 82, 0.15)',
         )}
 
-        {/* ─── TRACKING SECTION ─── */}
-        {trackingStocks.length > 0 && (
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>👁 Tracking</Text>
-              <View style={[styles.sectionBadge, { backgroundColor: 'rgba(0, 230, 118, 0.15)' }]}>
-                <Text style={[styles.sectionBadgeText, { color: '#00E676' }]}>{trackingStocks.length}</Text>
-              </View>
-            </View>
-            {trackingStocks.map(stock => (
-              <OpportunityItem
-                key={stock.id}
-                stock={stock}
-                onBuy={handleBuy}
-                onCloseTrade={handleCloseTrade}
-                onExtend={handleExtend}
-                onArchive={handleArchive}
-              />
-            ))}
-          </View>
+        {renderSection(
+          'trades',
+          'Active Trades',
+          '💼',
+          boughtStocks,
+          '#00E5FF',
+          'rgba(0, 229, 255, 0.15)',
         )}
 
-        {/* ─── EXPIRED SECTION ─── */}
-        {expiredStocks.length > 0 && (
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>⏰ Expired</Text>
-              <View style={[styles.sectionBadge, { backgroundColor: 'rgba(255, 215, 64, 0.15)' }]}>
-                <Text style={[styles.sectionBadgeText, { color: '#FFD740' }]}>{expiredStocks.length}</Text>
-              </View>
-            </View>
-            {expiredStocks.map(stock => (
-              <OpportunityItem
-                key={stock.id}
-                stock={stock}
-                onBuy={handleBuy}
-                onCloseTrade={handleCloseTrade}
-                onExtend={handleExtend}
-                onArchive={handleArchive}
-              />
-            ))}
-          </View>
+        {renderSection(
+          'tracking',
+          'Tracking',
+          '👁',
+          trackingStocks,
+          '#00E676',
+          'rgba(0, 230, 118, 0.15)',
+        )}
+
+        {renderSection(
+          'expired',
+          'Expired',
+          '⏰',
+          expiredStocks,
+          '#FFD740',
+          'rgba(255, 215, 64, 0.15)',
         )}
 
         {/* ─── HISTORICAL STATS ─── */}
@@ -651,29 +697,13 @@ export const GoodOpportunityTab: React.FC = () => {
           </TouchableOpacity>
         )}
 
-        {/* ─── ARCHIVED SECTION (collapsible) ─── */}
-        {archivedStocks.length > 0 && (
-          <View style={styles.sectionContainer}>
-            <TouchableOpacity
-              style={styles.sectionHeader}
-              onPress={() => setShowArchived(!showArchived)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.sectionTitle}>📦 Archived ({archivedStocks.length})</Text>
-              <Text style={styles.sectionToggle}>{showArchived ? '▲' : '▼'}</Text>
-            </TouchableOpacity>
-            {showArchived &&
-              archivedStocks.map(stock => (
-                <OpportunityItem
-                  key={stock.id}
-                  stock={stock}
-                  onBuy={handleBuy}
-                  onCloseTrade={handleCloseTrade}
-                  onExtend={handleExtend}
-                  onArchive={handleArchive}
-                />
-              ))}
-          </View>
+        {renderSection(
+          'archived',
+          'Archived',
+          '📦',
+          archivedStocks,
+          '#90A4AE',
+          'rgba(144, 164, 174, 0.15)',
         )}
 
         {/* Bottom padding for bottom tab bar */}
@@ -898,6 +928,34 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.4,
   },
+  // Compact toggle
+  compactToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    marginTop: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  compactToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  compactToggleIcon: {
+    fontSize: 16,
+  },
+  compactToggleLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
   // Sections
   sectionContainer: {
     marginTop: 8,
@@ -907,7 +965,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    marginBottom: 4,
+  },
+  sectionHeaderActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    marginBottom: 6,
+  },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   sectionTitle: {
     fontSize: 14,
@@ -920,6 +993,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
+    minWidth: 24,
+    alignItems: 'center',
   },
   sectionBadgeText: {
     fontSize: 12,
